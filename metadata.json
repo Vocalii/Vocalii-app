@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Vocalii Dashboard",
+  "description": "An interactive, elegant travel planning dashboard featuring rich bento grid widgets, live dynamic assistant chat, real-time weather, price charts, activity maps, and curated destination previews.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
