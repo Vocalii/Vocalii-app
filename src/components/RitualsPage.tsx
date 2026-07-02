@@ -1,23 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Play, 
-  Pause, 
-  RotateCcw, 
-  ChevronLeft, 
-  Check, 
-  Sparkles, 
-  AlertCircle, 
-  Trophy, 
-  Volume2, 
-  Clock, 
-  Activity, 
-  TrendingUp, 
-  Flame, 
-  Compass, 
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  Play,
+  ChevronLeft,
+  Sparkles,
+  Clock,
+  Flame,
+  Compass,
   HeartCrack,
   Droplet,
   ArrowRight,
-  Calendar
+  Activity,
+  X,
+  Check,
+  Wind,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -26,214 +22,175 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  CartesianGrid
+  CartesianGrid,
 } from 'recharts';
 import { EXERCISE_RITUALS } from '../ritualsData';
-import { Ritual, TodoItem } from '../types';
+import { Ritual } from '../types';
 
 interface RitualsPageProps {
-  primaryAccent: string;
-  todos: TodoItem[];
-  onToggleTodo: (id: string) => void;
+  dailyRitualIds: string[];
+  completedRitualIds: string[];
+  onCompleteRitual: (id: string) => void;
+  onRestartRoutine: () => void;
+  checkInDone: boolean;
+  onCompleteCheckIn: () => void;
 }
 
-export default function RitualsPage({ primaryAccent, todos, onToggleTodo }: RitualsPageProps) {
+export default function RitualsPage({ dailyRitualIds, completedRitualIds, onCompleteRitual, onRestartRoutine, checkInDone, onCompleteCheckIn }: RitualsPageProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedRitual, setSelectedRitual] = useState<Ritual | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  
-  const completedCount = todos.filter(todo => todo.completed).length;
-  
-  // Workspace player states
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(60); // 60s practice cycle
-  const [activeStep, setActiveStep] = useState(0);
-  const [pitchValue, setPitchValue] = useState(220); // standard low A note pitch (Hz) key
-  const [showCompletedOverlay, setShowCompletedOverlay] = useState(false);
-  const [breathingPhase, setBreathingPhase] = useState<'Inhale' | 'Exhale' | 'Hum / Hold'>('Inhale');
-  const [breathProgress, setBreathProgress] = useState(0); // 0 to 100 for circle sizing
+  const [showBenefitsModal, setShowBenefitsModal] = useState(false);
+  const [isRitualActive, setIsRitualActive] = useState(false);
+  const [ritualStarted, setRitualStarted] = useState(false);
+  const [ritualCompleted, setRitualCompleted] = useState(false);
+  const [fromRoutine, setFromRoutine] = useState(false);
+  const [showRoutineComplete, setShowRoutineComplete] = useState(false);
+  const [showCheckInModal, setShowCheckInModal] = useState(false);
+  const [checkInFatigue, setCheckInFatigue] = useState(3);
+  const [checkInSymptoms, setCheckInSymptoms] = useState<string[]>([]);
+  const [checkInNotes, setCheckInNotes] = useState('');
+  const [checkInVocalEffort, setCheckInVocalEffort] = useState(5);
+  const [checkInSupportAreas, setCheckInSupportAreas] = useState<string[]>([]);
+  const [checkInStep, setCheckInStep] = useState<1 | 2 | 3>(1);
+  const [habitChecks, setHabitChecks] = useState<Record<string, boolean | null>>({});
 
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const breathIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const DUMMY_HABITS = [
+    { id: 'hydration', label: 'Stayed hydrated throughout the day', emoji: '💧' },
+    { id: 'sleep', label: 'Got 7+ hours of sleep last night', emoji: '😴' },
+    { id: 'warmup', label: 'Completed a vocal warm-up this morning', emoji: '🎙️' },
+  ];
+
+  const closeCheckIn = () => {
+    setShowCheckInModal(false);
+    setCheckInStep(1);
+    setCheckInFatigue(3);
+    setCheckInSymptoms([]);
+    setCheckInNotes('');
+    setCheckInVocalEffort(5);
+    setCheckInSupportAreas([]);
+    setHabitChecks({});
+  };
+
+  const stepSubtitle = checkInStep === 1 ? 'How is your voice feeling today?' : checkInStep === 2 ? 'Anything to note?' : 'Did you complete your habits?';
+
+  const handleLogCheckIn = () => {
+    onCompleteCheckIn();
+    closeCheckIn();
+  };
+
+  const completedCount = dailyRitualIds.filter(id => completedRitualIds.includes(id)).length;
+  const dailyRituals = dailyRitualIds.map(id => EXERCISE_RITUALS.find(r => r.id === id)).filter(Boolean) as Ritual[];
 
   const categories = ['All', 'Warm-up', 'Calibrate', 'Resonance', 'Relief', 'Hydration'];
 
-  // Match ritual to list to-do based on category
-  const getMatchingTodo = (ritual: Ritual | null): TodoItem | undefined => {
-    if (!ritual) return undefined;
-    return todos.find(todo => todo.category.toLowerCase() === ritual.category.toLowerCase());
-  };
+  // Calendar state
+  const dateObj = new Date();
+  const currentMonthName = dateObj.toLocaleString('default', { month: 'long' });
+  const currentYearNum = dateObj.getFullYear();
+  const currentDayNum = dateObj.getDate();
+  const startDayOfWeek = new Date(currentYearNum, dateObj.getMonth(), 1).getDay();
+  const totalDaysInMonth = new Date(currentYearNum, dateObj.getMonth() + 1, 0).getDate();
+  const calendarDays: (number | null)[] = [];
+  for (let s = 0; s < startDayOfWeek; s++) calendarDays.push(null);
+  for (let d = 1; d <= totalDaysInMonth; d++) calendarDays.push(d);
+  const completedDaysList = [3, 5, 9, 12, 14].filter(d => d < currentDayNum);
 
-  const isCompletedInTodoList = (ritual: Ritual): boolean => {
-    const matchedTodo = getMatchingTodo(ritual);
-    return matchedTodo ? matchedTodo.completed : false;
-  };
 
   // Filter rituals
   const filteredRituals = EXERCISE_RITUALS.filter(ritual => {
     const matchesCategory = selectedCategory === 'All' || ritual.category === selectedCategory;
-    const matchesSearch = ritual.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          ritual.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          ritual.primaryFocus.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = ritual.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ritual.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ritual.primaryFocus.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCategory && matchesSearch;
   });
 
-  // Handle workspace exercise activation
   const startRitual = (ritual: Ritual) => {
     setSelectedRitual(ritual);
-    setActiveStep(0);
-    setIsPlaying(false);
-    setTimeLeft(60);
-    setShowCompletedOverlay(false);
-    setBreathingPhase('Inhale');
-    setBreathProgress(10);
+    setShowBenefitsModal(false);
+    setIsRitualActive(false);
+    setRitualStarted(false);
+    setRitualCompleted(false);
+    setFromRoutine(false);
   };
 
+  const launchActivity = () => {
+    setIsRitualActive(true);
+    setShowBenefitsModal(false);
+  };
+
+  const exitActivity = () => {
+    setIsRitualActive(false);
+    setRitualStarted(false);
+    setRitualCompleted(false);
+  };
+
+  const viewDetails = () => { setIsRitualActive(false); setFromRoutine(true); };
+
   const getFirstIncompleteRitual = (): Ritual | null => {
-    const incomplete = EXERCISE_RITUALS.find(ritual => !isCompletedInTodoList(ritual));
-    return incomplete || EXERCISE_RITUALS[0] || null;
+    const nextId = dailyRitualIds.find(id => !completedRitualIds.includes(id));
+    return nextId ? (EXERCISE_RITUALS.find(r => r.id === nextId) ?? null) : null;
+  };
+
+  const handleMarkComplete = () => {
+    setRitualCompleted(true);
+    const currentId = selectedRitual!.id;
+    onCompleteRitual(currentId);
+    setTimeout(() => {
+      const updatedCompleted = [...completedRitualIds, currentId];
+      const nextId = dailyRitualIds.find(id => !updatedCompleted.includes(id));
+      const next = nextId ? EXERCISE_RITUALS.find(r => r.id === nextId) ?? null : null;
+      if (next) {
+        setSelectedRitual(next);
+        setShowBenefitsModal(false);
+        setRitualStarted(false);
+        setRitualCompleted(false);
+        setIsRitualActive(true);
+      } else {
+        setSelectedRitual(null);
+        setIsRitualActive(false);
+        setRitualStarted(false);
+        setRitualCompleted(false);
+        setShowRoutineComplete(true);
+      }
+    }, 1200);
   };
 
   const handleStartDailyRituals = () => {
+    if (completedCount === dailyRitualIds.length) {
+      onRestartRoutine();
+      return;
+    }
     const nextRitual = getFirstIncompleteRitual();
     if (nextRitual) {
       startRitual(nextRitual);
+      setIsRitualActive(true);
     }
   };
 
-  // Timer loop
-  useEffect(() => {
-    if (isPlaying && timeLeft > 0) {
-      intervalRef.current = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            handleCompleteRitual();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    }
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [isPlaying, timeLeft]);
-
-  // Breathing Guide Loop
-  useEffect(() => {
-    if (isPlaying) {
-      let step = 0;
-      breathIntervalRef.current = setInterval(() => {
-        step += 2;
-        // Inhale cyclic animation (first 4 seconds)
-        const subCycle = step % 12; // 12 second total breath rhythm
-        if (subCycle < 4) {
-          setBreathingPhase('Inhale');
-          setBreathProgress(20 + (subCycle / 4) * 80); // expands
-        } else if (subCycle < 8) {
-          setBreathingPhase('Hum / Hold');
-          setBreathProgress(100); // hold maximum resonant expansion
-        } else {
-          setBreathingPhase('Exhale');
-          setBreathProgress(100 - ((subCycle - 8) / 4) * 80); // contracts gently
-        }
-      }, 200);
-    } else {
-      if (breathIntervalRef.current) clearInterval(breathIntervalRef.current);
-      setBreathProgress(35);
-    }
-
-    return () => {
-      if (breathIntervalRef.current) clearInterval(breathIntervalRef.current);
-    };
-  }, [isPlaying]);
-
-  const togglePlayback = () => {
-    setIsPlaying(!isPlaying);
-  };
-
-  const resetPractice = () => {
-    setIsPlaying(false);
-    setTimeLeft(60);
-    setActiveStep(0);
-    setBreathingPhase('Inhale');
-    setBreathProgress(35);
-  };
-
-  const handleCompleteRitual = () => {
-    setIsPlaying(false);
-    setShowCompletedOverlay(true);
-    
-    // Find the matching todo in the grid list and mark it complete if it isn't already
-    const matchedTodo = getMatchingTodo(selectedRitual);
-    if (matchedTodo && !matchedTodo.completed) {
-      onToggleTodo(matchedTodo.id);
+  const getDetailHeroTheme = (category: string) => {
+    switch (category) {
+      case 'Warm-up': return { bg: 'bg-gradient-to-br from-amber-950/80 to-[#0d0f14]', glow: 'bg-[radial-gradient(ellipse_at_center,rgba(245,158,11,0.15)_0%,transparent_70%)]', iconColor: 'text-amber-400', badge: 'bg-amber-500/10 border-amber-500/30 text-amber-400', Icon: Flame, accent: '#fbbf24' };
+      case 'Hydration': return { bg: 'bg-gradient-to-br from-blue-950/80 to-[#0d0f14]', glow: 'bg-[radial-gradient(ellipse_at_center,rgba(59,130,246,0.15)_0%,transparent_70%)]', iconColor: 'text-blue-400', badge: 'bg-blue-500/10 border-blue-500/30 text-blue-400', Icon: Droplet, accent: '#60a5fa' };
+      case 'Relief': return { bg: 'bg-gradient-to-br from-rose-950/80 to-[#0d0f14]', glow: 'bg-[radial-gradient(ellipse_at_center,rgba(244,63,94,0.15)_0%,transparent_70%)]', iconColor: 'text-rose-400', badge: 'bg-rose-500/10 border-rose-500/30 text-rose-400', Icon: HeartCrack, accent: '#fb7185' };
+      case 'Resonance': return { bg: 'bg-gradient-to-br from-violet-950/80 to-[#0d0f14]', glow: 'bg-[radial-gradient(ellipse_at_center,rgba(139,92,246,0.15)_0%,transparent_70%)]', iconColor: 'text-violet-400', badge: 'bg-violet-500/10 border-violet-500/30 text-violet-400', Icon: Activity, accent: '#a78bfa' };
+      case 'Calibrate': return { bg: 'bg-gradient-to-br from-cyan-950/80 to-[#0d0f14]', glow: 'bg-[radial-gradient(ellipse_at_center,rgba(6,182,212,0.15)_0%,transparent_70%)]', iconColor: 'text-cyan-400', badge: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400', Icon: Compass, accent: '#22d3ee' };
+      default: return { bg: 'bg-gradient-to-br from-[#17A9C9]/20 to-[#0d0f14]', glow: 'bg-[radial-gradient(ellipse_at_center,rgba(23,169,201,0.15)_0%,transparent_70%)]', iconColor: 'text-[#21e8ff]', badge: 'bg-[#17A9C9]/10 border-[#17A9C9]/30 text-[#21e8ff]', Icon: Sparkles, accent: '#21e8ff' };
     }
   };
-
-  const formattedTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-  };
-
-  // Calendar states/data
-  const dateObj = new Date(); // Dynamic date
-  const currentMonthName = dateObj.toLocaleString('default', { month: 'long' });
-  const currentYearNum = dateObj.getFullYear();
-  const currentDayNum = dateObj.getDate();
-
-  // Days in calendar
-  const startDayOfWeek = new Date(currentYearNum, dateObj.getMonth(), 1).getDay(); // first day of month (0-6)
-  const totalDaysInMonth = new Date(currentYearNum, dateObj.getMonth() + 1, 0).getDate();
-  
-  // Array of days
-  const calendarDays = [];
-  for (let s = 0; s < startDayOfWeek; s++) {
-    calendarDays.push(null); // padding
-  }
-  for (let d = 1; d <= totalDaysInMonth; d++) {
-    calendarDays.push(d);
-  }
-
-  // Generate a list of completed days in the current month before today.
-  const getMockCompletedDays = () => {
-    const currentDay = dateObj.getDate();
-    const days = [3, 5, 9, 12, 14].filter(d => d < currentDay);
-    if (days.length === 0) {
-      return [1, 2].filter(d => d < currentDay);
-    }
-    return days;
-  };
-  
-  const completedDaysList = getMockCompletedDays();
 
   return (
     <div className="w-full pb-10" id="rituals-page-container">
-      {/* Editorial Page Welcome Banner */}
-      <div className="mb-8 mt-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-light tracking-tight text-white mb-2 font-display">
-            The Medicine Room
-          </h2>
-          <p className="text-sm text-zinc-400 max-w-xl leading-relaxed">
-            Select high-fidelity clinical larynx routines, diaphragmatic pacing loops, and mucosal moisture regimens designed to neutralize vocal stress and prevent micro-wear.
-          </p>
-        </div>
-      </div>
-
       {/* Daily Rituals Progress Banner */}
       {!selectedRitual && (
         <div className="mb-8 bg-gradient-to-r from-[#17A9C9]/15 via-[#17A9C9]/8 to-[#12141a]/95 border border-[#17A9C9]/35 rounded-[30px] p-5.5 relative overflow-hidden group select-none shadow-[0_0_25px_rgba(23,169,201,0.06)] transition-all duration-300 hover:border-[#17A9C9]/45">
           {/* Subtle top/sides bright ambient glow */}
           <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-[#21e8ff]/35 to-transparent" />
           <div className="absolute top-0 bottom-0 left-0 w-[1px] bg-gradient-to-b from-[#21e8ff]/20 to-transparent" />
-          
+
           <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-[#17A9C9]/10 rounded-full blur-[40px] pointer-events-none group-hover:scale-110 transition-transform duration-700" />
-          
+
           <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
             <div className="flex items-start gap-4">
               <div className="w-11.5 h-11.5 rounded-2xl bg-[#17A9C9]/15 border border-[#17A9C9]/40 flex items-center justify-center text-[#21e8ff] flex-shrink-0 shadow-[0_0_15px_rgba(23,169,201,0.2)] mt-0.5">
@@ -246,22 +203,41 @@ export default function RitualsPage({ primaryAccent, todos, onToggleTodo }: Ritu
                 <p className="text-[11.5px] text-zinc-400 max-w-2xl leading-relaxed mb-3">
                   Your larynx requires targeted warm-up calibrations, hydration cycle lubrication, and deep pharyngeal expansion to protect delicate mucosal tissues during physical demand.
                 </p>
-                {/* Active/Start Daily Ritual Button */}
-                <button
-                  onClick={handleStartDailyRituals}
-                  className="relative overflow-hidden group/btn bg-[#131722]/50 hover:bg-[#1b2130]/75 border border-[#17A9C9]/30 hover:border-[#21e8ff]/60 text-[#21e8ff] hover:text-white px-5 py-2.5 text-[10px] font-mono tracking-widest uppercase rounded-xl flex items-center gap-2.5 transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15),inset_0_1px_1px_rgba(255,255,255,0.02)] hover:shadow-[0_0_15px_rgba(33,232,255,0.15)] cursor-pointer w-fit"
-                >
-                  {/* Premium ambient shining overlay */}
-                  <div className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/[0.04] to-transparent -skew-x-12 translate-x-[-150%] group-hover/btn:translate-x-[250%] transition-transform duration-[1200ms] ease-in-out" />
-                  
-                  <Play className="w-3 h-3 fill-current opacity-80 group-hover/btn:scale-110 transition-transform duration-300" />
-                  <span className="font-semibold tracking-widest text-[#21e8ff] group-hover/btn:text-white transition-colors duration-300">
-                    {completedCount === 0 ? 'Start Daily Rituals' : completedCount === todos.length ? 'Restart Routine' : 'Continue Routine'}
-                  </span>
-                </button>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  {/* Active/Start Daily Ritual Button */}
+                  <button
+                    onClick={handleStartDailyRituals}
+                    className="relative overflow-hidden group/btn bg-[#131722]/50 hover:bg-[#1b2130]/75 border border-[#17A9C9]/30 hover:border-[#21e8ff]/60 text-[#21e8ff] hover:text-white px-5 py-2.5 text-[10px] font-mono tracking-widest uppercase rounded-xl flex items-center gap-2.5 transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15),inset_0_1px_1px_rgba(255,255,255,0.02)] hover:shadow-[0_0_15px_rgba(33,232,255,0.15)] cursor-pointer w-fit"
+                  >
+                    <div className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/[0.04] to-transparent -skew-x-12 translate-x-[-150%] group-hover/btn:translate-x-[250%] transition-transform duration-[1200ms] ease-in-out" />
+                    <Play className="w-3 h-3 fill-current opacity-80 group-hover/btn:scale-110 transition-transform duration-300" />
+                    <span className="font-semibold tracking-widest text-[#21e8ff] group-hover/btn:text-white transition-colors duration-300">
+                      {completedCount === 0 ? 'Start Daily Rituals' : completedCount === dailyRitualIds.length ? 'Restart Routine' : 'Continue Routine'}
+                    </span>
+                  </button>
+
+                  {/* Daily Check-In Button */}
+                  {checkInDone ? (
+                    <button
+                      disabled
+                      className="border border-[#17A9C9]/25 bg-[#17A9C9]/5 px-5 py-2.5 text-[10px] font-mono tracking-widest uppercase rounded-xl flex items-center gap-2 opacity-60 cursor-default w-fit"
+                    >
+                      <Check className="w-3 h-3 text-[#17A9C9]" />
+                      <span className="text-[#17A9C9]">Checked In</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowCheckInModal(true)}
+                      className="relative overflow-hidden group/ci bg-[#17A9C9]/20 hover:bg-[#17A9C9]/30 border border-[#17A9C9]/55 hover:border-[#21e8ff]/75 px-5 py-2.5 text-[10px] font-mono tracking-widest uppercase rounded-xl flex items-center gap-2.5 transition-all duration-300 cursor-pointer w-fit shadow-[0_0_12px_rgba(23,169,201,0.12)] hover:shadow-[0_0_18px_rgba(23,169,201,0.25)]"
+                    >
+                      <div className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/[0.05] to-transparent -skew-x-12 translate-x-[-150%] group-hover/ci:translate-x-[250%] transition-transform duration-[1000ms] ease-in-out" />
+                      <span className="text-white transition-colors duration-300">Daily Check-In</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-            
+
             {/* Progress indicator */}
             <div className="flex items-center gap-4.5 w-full md:w-auto md:border-l border-zinc-800/80 md:pl-6.5 flex-shrink-0 justify-between md:justify-start">
               <div className="flex flex-col items-start md:items-end">
@@ -271,41 +247,516 @@ export default function RitualsPage({ primaryAccent, todos, onToggleTodo }: Ritu
                 <span className="text-[18px] font-light text-zinc-400 font-mono leading-none">
                   <span className="text-[#21e8ff] font-medium">{completedCount}</span>
                   <span className="text-zinc-700 mx-1">/</span>
-                  <span>{todos.length}</span>
+                  <span>{dailyRitualIds.length}</span>
                 </span>
               </div>
-              
+
               {/* Circular progress wheel badge */}
-              <div className="relative w-12 h-12 flex items-center justify-center flex-shrink-0">
-                <svg className="w-full h-full transform -rotate-90">
-                  <circle
-                    cx="24"
-                    cy="24"
-                    r="18"
-                    className="stroke-zinc-900/80"
-                    strokeWidth="3"
-                    fill="transparent"
-                  />
-                  <circle
-                    cx="24"
-                    cy="24"
-                    r="18"
-                    className="stroke-[#21e8ff] transition-all duration-500"
-                    strokeWidth="3"
-                    strokeDasharray={`${2 * Math.PI * 18}`}
-                    strokeDashoffset={`${2 * Math.PI * 18 * (1 - (completedCount / Math.max(todos.length, 1)))}`}
-                    strokeLinecap="round"
-                    fill="transparent"
-                  />
-                </svg>
-                <span className="absolute text-[9px] font-mono font-medium text-zinc-300">
-                  {Math.round((completedCount / Math.max(todos.length, 1)) * 100)}%
-                </span>
-              </div>
+              {(() => {
+                const isAllDone = completedCount === dailyRitualIds.length && dailyRitualIds.length > 0;
+                const pct = completedCount / Math.max(dailyRitualIds.length, 1);
+                const circumference = 2 * Math.PI * 34;
+                return (
+                  <div className="relative w-20 h-20 flex items-center justify-center flex-shrink-0">
+                    <motion.svg
+                      className="w-full h-full transform -rotate-90"
+                      viewBox="0 0 80 80"
+                      animate={isAllDone ? { filter: ['drop-shadow(0 0 2px rgba(23,169,201,0.2))', 'drop-shadow(0 0 5px rgba(23,169,201,0.45))', 'drop-shadow(0 0 2px rgba(23,169,201,0.2))'] } : { filter: 'drop-shadow(0 0 0px transparent)' }}
+                      transition={{ duration: 2, repeat: isAllDone ? Infinity : 0, ease: 'easeInOut' }}
+                    >
+                      <defs>
+                        <linearGradient id="ringGradient" x1="0" y1="1" x2="0" y2="0" gradientUnits="objectBoundingBox">
+                          <stop offset="0%" stopColor="rgba(14,90,110,0.7)" />
+                          <stop offset="100%" stopColor="rgba(23,169,201,0.85)" />
+                        </linearGradient>
+                      </defs>
+                      <circle cx="40" cy="40" r="34" strokeWidth="4" fill="transparent" style={{ stroke: 'rgba(255,255,255,0.05)' }} />
+                      <circle
+                        cx="40"
+                        cy="40"
+                        r="34"
+                        strokeWidth={isAllDone ? 5 : 4}
+                        strokeDasharray={circumference}
+                        strokeDashoffset={circumference * (1 - pct)}
+                        strokeLinecap="round"
+                        fill="transparent"
+                        style={{
+                          stroke: 'url(#ringGradient)',
+                          transition: 'stroke-dashoffset 0.5s ease, stroke-width 0.3s ease',
+                        }}
+                      />
+                    </motion.svg>
+                    {isAllDone ? (
+                      <motion.div
+                        className="absolute"
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ type: 'spring', stiffness: 320, damping: 22 }}
+                      >
+                        <Check className="w-5 h-5" style={{ color: '#21e8ff' }} strokeWidth={2.5} />
+                      </motion.div>
+                    ) : (
+                      <span className="absolute text-[13px] font-mono font-medium text-zinc-300">
+                        {Math.round(pct * 100)}%
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
       )}
+
+      {/* Check-In Modal */}
+      <AnimatePresence>
+        {showCheckInModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}
+            onClick={closeCheckIn}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 12 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-md rounded-[28px] overflow-hidden relative"
+              style={{
+                background: 'linear-gradient(160deg, #0f1319 0%, #0b0e14 100%)',
+                border: '1px solid rgba(23,169,201,0.2)',
+                boxShadow: '0 24px 80px rgba(0,0,0,0.7), 0 0 60px rgba(23,169,201,0.06), inset 0 1px 0 rgba(33,232,255,0.08)',
+              }}
+            >
+              {/* Top sheen */}
+              <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#21e8ff]/50 to-transparent" />
+              {/* Ambient corner glow */}
+              <div className="absolute -top-12 -right-12 w-40 h-40 bg-[#17A9C9]/10 rounded-full blur-[60px] pointer-events-none" />
+              <div className="absolute -bottom-16 -left-8 w-48 h-32 bg-[#17A9C9]/07 rounded-full blur-[60px] pointer-events-none" />
+
+              {/* Header */}
+              <div className="flex items-center justify-between px-7 pt-6 pb-5 relative z-10" style={{ borderBottom: '1px solid rgba(23,169,201,0.1)' }}>
+                <div className="flex items-center gap-3">
+                  <div>
+                    <h3 className="text-[15px] font-semibold text-white leading-tight">Daily Check-In</h3>
+                    <p className="text-[10.5px] text-zinc-500 mt-0.5">{stepSubtitle}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex gap-1">
+                    {[1, 2, 3].map(s => (
+                      <div key={s} className="w-5 h-1 rounded-full transition-all duration-300" style={{ background: checkInStep >= s ? 'rgba(33,232,255,0.7)' : 'rgba(255,255,255,0.08)' }} />
+                    ))}
+                  </div>
+                  <button onClick={closeCheckIn} className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-500 hover:text-white hover:bg-white/5 transition-all duration-150 cursor-pointer">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <AnimatePresence mode="wait">
+                {checkInStep === 1 ? (
+                  <motion.div
+                    key="step1"
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -12 }}
+                    transition={{ duration: 0.2 }}
+                    className="px-7 py-6 flex flex-col gap-6 relative z-10"
+                  >
+                    {/* Vocal Effort slider */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <span className="text-[11px] font-light uppercase tracking-[0.18em] text-[#17A9C9]/70">Vocal Effort</span>
+                          <p className="text-[9px] text-zinc-600 mt-0.5">How much effort or strain does your voice take today?</p>
+                        </div>
+                        <span className="text-[11px] font-light text-[#21e8ff] tabular-nums">{Math.round(checkInVocalEffort)} / 10</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={10}
+                        step={0.1}
+                        value={checkInVocalEffort}
+                        onChange={e => setCheckInVocalEffort(Number(e.target.value))}
+                        className="w-full h-1.5 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_0_6px_rgba(33,232,255,0.6),0_0_14px_rgba(33,232,255,0.25)] [&::-webkit-slider-thumb]:cursor-grab [&::-webkit-slider-thumb]:active:cursor-grabbing [&::-webkit-slider-thumb]:transition-transform [&::-webkit-slider-thumb]:duration-75 [&::-webkit-slider-thumb]:hover:scale-110 [&::-webkit-slider-thumb]:active:scale-95 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:cursor-grab"
+                        style={{
+                          background: `linear-gradient(to right, rgba(14,90,110,0.8) 0%, rgba(23,169,201,0.9) ${checkInVocalEffort / 10 * 100}%, rgba(255,255,255,0.08) ${checkInVocalEffort / 10 * 100}%, rgba(255,255,255,0.08) 100%)`,
+                          transition: 'background 0.05s linear',
+                          filter: `drop-shadow(0 0 2px rgba(23,169,201,${0.15 + (checkInVocalEffort / 10) * 0.25}))`,
+                        }}
+                      />
+                      <div className="flex justify-between mt-1.5">
+                        <span className="text-[9px] text-zinc-600 font-mono">No effort</span>
+                        <span className="text-[9px] text-zinc-600 font-mono">Max strain</span>
+                      </div>
+                    </div>
+
+                    {/* Symptoms */}
+                    <div>
+                      <span className="text-[11px] font-light uppercase tracking-[0.18em] text-[#17A9C9]/70 block mb-3">Symptoms</span>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { label: 'Hoarseness', emoji: '🗣️' },
+                          { label: 'Dryness', emoji: '💧' },
+                          { label: 'Tension', emoji: '😬' },
+                          { label: 'Breathiness', emoji: '💨' },
+                          { label: 'Fatigue', emoji: '😴' },
+                          { label: 'Pain', emoji: '😣' },
+                        ].map(({ label, emoji }) => {
+                          const active = checkInSymptoms.includes(label);
+                          return (
+                            <motion.button
+                              key={label}
+                              onClick={() => setCheckInSymptoms(prev => active ? prev.filter(s => s !== label) : [...prev, label])}
+                              whileTap={{ scale: 0.88 }}
+                              transition={{ duration: 0.1 }}
+                              className="flex flex-col items-center gap-1.5 py-3.5 rounded-2xl transition-all duration-150 cursor-pointer"
+                              style={active ? {
+                                background: 'rgba(23,169,201,0.15)',
+                                border: '1px solid rgba(33,232,255,0.4)',
+                              } : {
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid rgba(255,255,255,0.07)',
+                              }}
+                            >
+                              <span className="text-2xl leading-none">{emoji}</span>
+                              <span className="text-[10px] font-mono" style={{ color: active ? '#21e8ff' : '#71717a' }}>{label}</span>
+                            </motion.button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Fatigue level */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-[11px] font-light uppercase tracking-[0.18em] text-[#17A9C9]/70">Vocal Fatigue</span>
+                        <span className="text-[11px] font-light text-[#21e8ff]">{checkInFatigue} / 5</span>
+                      </div>
+                      <div className="flex gap-2">
+                        {[1, 2, 3, 4, 5].map(n => {
+                          const active = checkInFatigue >= n;
+                          const t = n / 5;
+                          return (
+                            <button
+                              key={n}
+                              onClick={() => setCheckInFatigue(n)}
+                              className="flex-1 h-8 rounded-lg transition-all duration-200 cursor-pointer text-[11px] font-mono"
+                              style={active ? {
+                                background: `linear-gradient(135deg, rgba(23,169,201,${0.08 + t * 0.32}) 0%, rgba(33,232,255,${0.03 + t * 0.12}) 100%)`,
+                                border: `1px solid rgba(33,232,255,${0.15 + t * 0.48})`,
+                                color: `rgba(33,232,255,${0.45 + t * 0.55})`,
+                                boxShadow: n === checkInFatigue ? `0 0 ${6 + t * 16}px rgba(33,232,255,${t * 0.28})` : 'none',
+                              } : {
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid rgba(255,255,255,0.07)',
+                                color: '#52525b',
+                              }}
+                            >
+                              {n}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex justify-between mt-1.5">
+                        <span className="text-[9px] text-zinc-600 font-mono">None</span>
+                        <span className="text-[9px] text-zinc-600 font-mono">Severe</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setCheckInStep(2)}
+                      className="relative overflow-hidden w-full py-3.5 rounded-xl flex items-center justify-center gap-2 cursor-pointer group/submit transition-all duration-300"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(23,169,201,0.22) 0%, rgba(33,232,255,0.10) 100%)',
+                        border: '1px solid rgba(33,232,255,0.5)',
+                        boxShadow: '0 0 24px rgba(33,232,255,0.12), inset 0 1px 0 rgba(33,232,255,0.15)',
+                      }}
+                    >
+                      <div className="absolute inset-0 w-2/5 h-full bg-gradient-to-r from-transparent via-white/[0.07] to-transparent -skew-x-12 -translate-x-full group-hover/submit:translate-x-[300%] transition-transform duration-[900ms] ease-in-out pointer-events-none" />
+                      <span className="text-[11px] tracking-[0.22em] uppercase font-semibold text-[#21e8ff] group-hover/submit:text-white transition-colors duration-300 relative z-10">
+                        Continue
+                      </span>
+                    </button>
+                  </motion.div>
+                ) : checkInStep === 2 ? (
+                  <motion.div
+                    key="step2"
+                    initial={{ opacity: 0, x: 12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -12 }}
+                    transition={{ duration: 0.2 }}
+                    className="px-7 py-6 flex flex-col gap-6 relative z-10"
+                  >
+                    {/* Support areas */}
+                    <div>
+                      <span className="text-[11px] font-light uppercase tracking-[0.18em] text-[#17A9C9]/70 block mb-3">What area needs support today?</span>
+                      <div className="flex justify-between gap-1">
+                        {[
+                          { label: 'Breath & fatigue', icon: <Wind className="w-5 h-5" /> },
+                          { label: 'Body tension', icon: <Activity className="w-5 h-5" /> },
+                          { label: 'Throat irritation', icon: <Flame className="w-5 h-5" /> },
+                          { label: 'Confidence', icon: <Sparkles className="w-5 h-5" /> },
+                          { label: 'Recovery', icon: <Clock className="w-5 h-5" /> },
+                        ].map(({ label, icon }) => {
+                          const active = checkInSupportAreas.includes(label);
+                          return (
+                            <motion.button
+                              key={label}
+                              onClick={() => setCheckInSupportAreas(prev => active ? prev.filter(a => a !== label) : [...prev, label])}
+                              whileTap={{ scale: 0.88 }}
+                              transition={{ duration: 0.1 }}
+                              className="flex flex-col items-center gap-2 cursor-pointer"
+                            >
+                              <div
+                                className="w-13 h-13 rounded-full flex items-center justify-center transition-all duration-200"
+                                style={active ? {
+                                  background: 'linear-gradient(135deg, rgba(23,169,201,0.22) 0%, rgba(33,232,255,0.08) 100%)',
+                                  border: '1px solid rgba(33,232,255,0.45)',
+                                  boxShadow: '0 0 14px rgba(23,169,201,0.18), inset 0 1px 0 rgba(255,255,255,0.1)',
+                                } : {
+                                  background: 'rgba(255,255,255,0.04)',
+                                  border: '1px solid rgba(255,255,255,0.09)',
+                                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
+                                }}
+                              >
+                                <span style={{ color: active ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.3)' }}>{icon}</span>
+                              </div>
+                              <span className="text-[9px] font-mono text-center leading-tight w-14" style={{ color: active ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.28)' }}>{label}</span>
+                            </motion.button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[11px] font-light uppercase tracking-[0.18em] text-[#17A9C9]/70 block mb-2">Notes</span>
+                      <textarea
+                        value={checkInNotes}
+                        onChange={e => setCheckInNotes(e.target.value)}
+                        placeholder="Anything to note about your voice today..."
+                        rows={3}
+                        autoFocus
+                        className="w-full resize-none rounded-xl px-4 py-3 text-[12px] text-zinc-300 placeholder-zinc-600 focus:outline-none transition-colors duration-150"
+                        style={{ background: 'rgba(23,169,201,0.04)', border: '1px solid rgba(23,169,201,0.15)' }}
+                      />
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setCheckInStep(1)}
+                        className="py-3.5 px-5 rounded-xl text-[11px] font-mono tracking-widest uppercase text-zinc-400 hover:text-white transition-colors duration-200 cursor-pointer"
+                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={() => setCheckInStep(3)}
+                        className="relative overflow-hidden flex-1 py-3.5 rounded-xl flex items-center justify-center gap-2 cursor-pointer group/submit transition-all duration-300"
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(23,169,201,0.22) 0%, rgba(33,232,255,0.10) 100%)',
+                          border: '1px solid rgba(33,232,255,0.5)',
+                          boxShadow: '0 0 24px rgba(33,232,255,0.12), inset 0 1px 0 rgba(33,232,255,0.15)',
+                        }}
+                      >
+                        <div className="absolute inset-0 w-2/5 h-full bg-gradient-to-r from-transparent via-white/[0.07] to-transparent -skew-x-12 -translate-x-full group-hover/submit:translate-x-[300%] transition-transform duration-[900ms] ease-in-out pointer-events-none" />
+                        <span className="text-[11px] tracking-[0.22em] uppercase font-semibold text-[#21e8ff] group-hover/submit:text-white transition-colors duration-300 relative z-10">
+                          Continue
+                        </span>
+                      </button>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="step3"
+                    initial={{ opacity: 0, x: 12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 12 }}
+                    transition={{ duration: 0.2 }}
+                    className="px-7 py-6 flex flex-col gap-5 relative z-10"
+                  >
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] font-light uppercase tracking-[0.18em] text-[#17A9C9]/70">Habits</span>
+                      <p className="text-[12px] text-zinc-400 font-light leading-relaxed">Mark each habit you completed today.</p>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      {DUMMY_HABITS.map(habit => {
+                        const val = habitChecks[habit.id] ?? null;
+                        return (
+                          <div
+                            key={habit.id}
+                            className="flex items-center justify-between gap-4 py-3.5 px-4 rounded-2xl transition-all duration-200"
+                            style={val !== null ? {
+                              background: 'rgba(23,169,201,0.08)',
+                              border: '1px solid rgba(33,232,255,0.25)',
+                              boxShadow: '0 0 16px rgba(23,169,201,0.08)',
+                            } : {
+                              background: 'rgba(255,255,255,0.03)',
+                              border: '1px solid rgba(255,255,255,0.07)',
+                            }}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="text-xl leading-none flex-shrink-0">{habit.emoji}</span>
+                              <span className="text-[12px] font-light text-zinc-300 leading-snug">{habit.label}</span>
+                            </div>
+                            <div className="flex gap-2 flex-shrink-0">
+                              <button
+                                onClick={() => setHabitChecks(prev => ({ ...prev, [habit.id]: true }))}
+                                className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer text-[11px] font-mono"
+                                style={val === true ? {
+                                  background: 'rgba(16,185,129,0.18)',
+                                  border: '1px solid rgba(16,185,129,0.5)',
+                                  color: '#34d399',
+                                } : {
+                                  background: 'rgba(255,255,255,0.04)',
+                                  border: '1px solid rgba(255,255,255,0.08)',
+                                  color: '#52525b',
+                                }}
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={() => setHabitChecks(prev => ({ ...prev, [habit.id]: false }))}
+                                className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer text-[11px] font-mono"
+                                style={val === false ? {
+                                  background: 'rgba(239,68,68,0.12)',
+                                  border: '1px solid rgba(239,68,68,0.35)',
+                                  color: '#f87171',
+                                } : {
+                                  background: 'rgba(255,255,255,0.04)',
+                                  border: '1px solid rgba(255,255,255,0.08)',
+                                  color: '#52525b',
+                                }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex gap-3 mt-1">
+                      <button
+                        onClick={() => setCheckInStep(2)}
+                        className="py-3.5 px-5 rounded-xl text-[11px] font-mono tracking-widest uppercase text-zinc-400 hover:text-white transition-colors duration-200 cursor-pointer"
+                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={handleLogCheckIn}
+                        className="relative overflow-hidden flex-1 py-3.5 rounded-xl flex items-center justify-center gap-2 cursor-pointer group/log transition-all duration-300"
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(23,169,201,0.22) 0%, rgba(33,232,255,0.10) 100%)',
+                          border: '1px solid rgba(33,232,255,0.5)',
+                          boxShadow: '0 0 24px rgba(33,232,255,0.12), inset 0 1px 0 rgba(33,232,255,0.15)',
+                        }}
+                      >
+                        <div className="absolute inset-0 w-2/5 h-full bg-gradient-to-r from-transparent via-white/[0.07] to-transparent -skew-x-12 -translate-x-full group-hover/log:translate-x-[300%] transition-transform duration-[900ms] ease-in-out pointer-events-none" />
+                        <span className="text-[11px] tracking-[0.22em] uppercase font-semibold text-[#21e8ff] group-hover/log:text-white transition-colors duration-300 relative z-10">
+                          Log it
+                        </span>
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Routine Complete Overlay */}
+      <AnimatePresence>
+        {showRoutineComplete && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-8"
+            style={{ background: 'rgba(5,6,9,0.92)', backdropFilter: 'blur(20px)' }}
+          >
+            {/* Checkmark */}
+            <motion.div
+              className="relative flex items-center justify-center"
+              initial={{ scale: 0.7, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <motion.div
+                className="absolute rounded-full pointer-events-none"
+                style={{ width: 180, height: 180, background: 'radial-gradient(circle, rgba(23,169,201,0.1) 0%, transparent 70%)' }}
+                animate={{ scale: [1, 1.12, 1] }}
+                transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              <div
+                className="w-32 h-32 rounded-full flex items-center justify-center relative z-10"
+                style={{ background: 'rgba(23,169,201,0.08)', border: '1px solid rgba(33,232,255,0.2)' }}
+              >
+                <svg viewBox="0 0 52 52" className="w-16 h-16" fill="none">
+                  <motion.path
+                    d="M13 26 L22 35 L39 17"
+                    stroke="#17A9C9"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    initial={{ pathLength: 0, opacity: 0 }}
+                    animate={{ pathLength: 1, opacity: 1 }}
+                    transition={{ duration: 0.7, delay: 0.25, ease: 'easeOut' }}
+                  />
+                </svg>
+              </div>
+            </motion.div>
+
+            {/* Label */}
+            <motion.p
+              className="text-[10px] font-mono tracking-[0.28em] uppercase text-[#17A9C9]/60"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, delay: 0.75 }}
+            >
+              Daily Routine Complete
+            </motion.p>
+
+            {/* Count */}
+            <motion.p
+              className="text-[13px] text-zinc-600 font-light -mt-4"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, delay: 1.0 }}
+            >
+              {dailyRitualIds.length} ritual{dailyRitualIds.length !== 1 ? 's' : ''} completed today
+            </motion.p>
+
+            {/* Continue button */}
+            <motion.button
+              onClick={() => setShowRoutineComplete(false)}
+              className="relative overflow-hidden px-10 py-3.5 rounded-xl flex items-center justify-center gap-2 cursor-pointer group/dismiss transition-all duration-300"
+              style={{
+                background: 'linear-gradient(135deg, rgba(23,169,201,0.14) 0%, rgba(33,232,255,0.06) 100%)',
+                border: '1px solid rgba(33,232,255,0.28)',
+              }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, delay: 1.3 }}
+            >
+              <div className="absolute inset-0 w-2/5 h-full bg-gradient-to-r from-transparent via-white/[0.06] to-transparent -skew-x-12 -translate-x-full group-hover/dismiss:translate-x-[300%] transition-transform duration-[900ms] ease-in-out pointer-events-none" />
+              <span className="text-[11px] tracking-[0.22em] uppercase font-semibold text-[#17A9C9] group-hover/dismiss:text-white transition-colors duration-300 relative z-10">
+                Continue
+              </span>
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Ritual Library section header and filters/search inline */}
       {!selectedRitual && (
@@ -320,11 +771,10 @@ export default function RitualsPage({ primaryAccent, todos, onToggleTodo }: Ritu
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-4 py-2 text-xs rounded-xl transition-all duration-300 border cursor-pointer ${
-                    selectedCategory === cat 
-                      ? 'bg-[#17A9C9]/15 border-[#17A9C9]/45 text-[#21e8ff] font-semibold tracking-wide shadow-[0_0_12px_rgba(23,169,201,0.08)]' 
-                      : 'bg-zinc-900/40 border-zinc-900 hover:border-zinc-800 text-zinc-400 hover:text-white'
-                  }`}
+                  className={`px-4 py-2 text-xs rounded-xl transition-all duration-300 border cursor-pointer ${selectedCategory === cat
+                    ? 'bg-[#17A9C9]/15 border-[#17A9C9]/45 text-[#21e8ff] font-semibold tracking-wide shadow-[0_0_12px_rgba(23,169,201,0.08)]'
+                    : 'bg-zinc-900/40 border-zinc-900 hover:border-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
                 >
                   {cat}
                 </button>
@@ -332,15 +782,15 @@ export default function RitualsPage({ primaryAccent, todos, onToggleTodo }: Ritu
             </div>
 
             {/* Search Bar Input (moved inline) */}
-            <div className="w-full md:w-72 relative">
-              <input 
-                type="text" 
+            <div className="w-full md:w-72 relative flex items-center">
+              <input
+                type="text"
                 placeholder="Search exercises..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full py-2.5 pl-4 pr-10 rounded-2xl bg-[#13151c]/70 border border-zinc-800 focus:border-[#17A9C9]/50 focus:outline-none text-xs text-white"
               />
-              <div className="absolute right-3.5 top-3.5 text-zinc-500">
+              <div className="absolute right-3.5 flex items-center pointer-events-none text-zinc-500">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
@@ -356,7 +806,7 @@ export default function RitualsPage({ primaryAccent, todos, onToggleTodo }: Ritu
           {filteredRituals.length === 0 ? (
             <div className="col-span-full py-16 text-center border border-dashed border-zinc-800 rounded-3xl bg-zinc-950/20">
               <span className="text-zinc-500 text-sm block mb-1">No rituals found matching your query</span>
-              <button 
+              <button
                 onClick={() => { setSelectedCategory('All'); setSearchQuery(''); }}
                 className="text-xs text-[#21e8ff] hover:underline"
               >
@@ -365,9 +815,7 @@ export default function RitualsPage({ primaryAccent, todos, onToggleTodo }: Ritu
             </div>
           ) : (
             filteredRituals.map((ritual) => {
-              const matchedTodo = getMatchingTodo(ritual);
-              const isDone = isCompletedInTodoList(ritual);
-              
+
               // Define colored dots for each category
               let dotColor = "bg-[#21e8ff]";
               if (ritual.category === 'Warm-up') {
@@ -436,10 +884,10 @@ export default function RitualsPage({ primaryAccent, todos, onToggleTodo }: Ritu
                 >
                   {/* Subtle top light edge */}
                   <div className={`absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent ${itemTheme.lightEdgeClass} to-transparent z-10`} />
-                  
+
                   {/* Background animations / orbs */}
                   <div className={`absolute -bottom-12 left-1/2 -translate-x-1/2 w-56 h-20 ${itemTheme.orbClass} rounded-full blur-[35px] pointer-events-none transition-all duration-500 group-hover:scale-110 z-0`} />
-                  
+
                   <div className="relative z-10">
                     {/* Header line: Category + duration info with a color-coded dot */}
                     <div className="flex items-center justify-between mb-4">
@@ -456,7 +904,7 @@ export default function RitualsPage({ primaryAccent, todos, onToggleTodo }: Ritu
                     <h3 className="text-sm font-semibold text-zinc-200 group-hover:text-white transition-colors mb-2 tracking-wide">
                       {ritual.name}
                     </h3>
-                    
+
                     <p className="text-[11.5px] text-zinc-500 leading-relaxed mb-6">
                       {ritual.description}
                     </p>
@@ -474,455 +922,636 @@ export default function RitualsPage({ primaryAccent, todos, onToggleTodo }: Ritu
             })
           )}
         </div>
-      ) : (
-        /* ================= ACTIVE PRACTICE WORKSPACE PLAYER ================= */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in">
-          
-          {/* Back button and Left details panel (7 Columns) */}
-          <div className="lg:col-span-7 flex flex-col gap-5">
-            <button
-              onClick={() => setSelectedRitual(null)}
-              className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer self-start bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800/60 px-3 py-1.5 rounded-xl mb-1"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              <span>Back to Library</span>
-            </button>
+      ) : isRitualActive ? (() => {
+        const heroTheme = getDetailHeroTheme(selectedRitual.category);
+        const routineIndex = dailyRitualIds.indexOf(selectedRitual.id);
+        const isInRoutine = routineIndex !== -1;
 
-            <div className="bg-[#12141a]/95 border border-zinc-800/80 rounded-[28px] p-6 shadow-sm relative overflow-hidden">
-              <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-[#17A9C9]/25 to-transparent" />
-              
-              <div className="flex items-center justify-between mb-4">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-mono uppercase bg-[#17A9C9]/10 text-[#21e8ff] border border-[#17A9C9]/15">
-                  {selectedRitual.category} Ritual
-                </span>
-                <span className="text-[10px] font-mono text-zinc-500 tracking-wider">
-                  Target: {selectedRitual.difficulty}
-                </span>
+        const activityVisual = (() => {
+          switch (selectedRitual.category) {
+            case 'Warm-up':
+              return (
+                <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(245,158,11,0.1)_0%,transparent_70%)] pointer-events-none" />
+                  <div className="flex items-end gap-1.5 h-36">
+                    {[18, 32, 14, 44, 28, 50, 20, 38, 12, 46, 24, 42, 16, 36, 26, 48, 22, 40].map((h, i) => (
+                      <motion.div
+                        key={i}
+                        className="w-2 rounded-full"
+                        style={{ background: 'linear-gradient(to top, #f59e0b, #fcd34d)', opacity: 0.5 + (i % 3) * 0.15 }}
+                        animate={{ height: [`${h * 0.5}px`, `${h}px`, `${h * 0.5}px`] }}
+                        transition={{ duration: 0.7 + (i % 5) * 0.15, repeat: Infinity, ease: 'easeInOut', delay: i * 0.06 }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            case 'Calibrate':
+              return (
+                <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(6,182,212,0.1)_0%,transparent_70%)] pointer-events-none" />
+                  {[0, 1, 2, 3].map(i => (
+                    <motion.div
+                      key={i}
+                      className="absolute rounded-full border border-cyan-400"
+                      style={{ width: 80, height: 80 }}
+                      animate={{ scale: [0.4 + i * 0.15, 1.6 + i * 0.2], opacity: [0.7, 0] }}
+                      transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut', delay: i * 0.55 }}
+                    />
+                  ))}
+                  <div className="w-4 h-4 rounded-full bg-cyan-400 shadow-[0_0_24px_rgba(6,182,212,0.9)] z-10" />
+                </div>
+              );
+            case 'Resonance':
+              return (
+                <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(139,92,246,0.1)_0%,transparent_70%)] pointer-events-none" />
+                  <div className="flex items-center gap-2">
+                    {[30, 55, 20, 70, 40, 60, 25, 50, 35, 65, 45, 55].map((h, i) => (
+                      <motion.div
+                        key={i}
+                        className="w-1.5 rounded-full"
+                        style={{ background: 'linear-gradient(to top, #7c3aed, #a78bfa)', opacity: 0.5 + (i % 3) * 0.2 }}
+                        animate={{ height: [`${h * 0.4}px`, `${h}px`, `${h * 0.4}px`] }}
+                        transition={{ duration: 0.55 + (i % 4) * 0.18, repeat: Infinity, ease: 'easeInOut', delay: i * 0.07 }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            case 'Relief':
+              return (
+                <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(244,63,94,0.08)_0%,transparent_70%)] pointer-events-none" />
+                  {[140, 95, 55].map((size, i) => (
+                    <motion.div
+                      key={i}
+                      className="absolute rounded-full border border-rose-400"
+                      style={{ width: size, height: size, opacity: 0.25 - i * 0.04 }}
+                      animate={{ scale: [1, 1.18, 1] }}
+                      transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: i * 0.4 }}
+                    />
+                  ))}
+                  <motion.div
+                    className="w-14 h-14 rounded-full"
+                    style={{ background: 'radial-gradient(circle, rgba(244,63,94,0.35) 0%, rgba(244,63,94,0.08) 100%)', border: '1px solid rgba(244,63,94,0.4)' }}
+                    animate={{ scale: [1, 1.22, 1] }}
+                    transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                </div>
+              );
+            case 'Hydration':
+              return (
+                <div className="relative w-full h-full overflow-hidden flex items-center justify-center">
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(59,130,246,0.1)_0%,transparent_70%)] pointer-events-none" />
+                  {[
+                    { left: '18%', size: 10, dur: 2.2, delay: 0 },
+                    { left: '35%', size: 7, dur: 1.8, delay: 0.4 },
+                    { left: '52%', size: 12, dur: 2.6, delay: 0.8 },
+                    { left: '65%', size: 6, dur: 1.6, delay: 0.2 },
+                    { left: '78%', size: 9, dur: 2.0, delay: 1.1 },
+                    { left: '28%', size: 8, dur: 2.4, delay: 1.5 },
+                    { left: '60%', size: 11, dur: 2.8, delay: 0.6 },
+                  ].map((b, i) => (
+                    <motion.div
+                      key={i}
+                      className="absolute rounded-full bg-blue-400"
+                      style={{ width: b.size, height: b.size, left: b.left, opacity: 0.55 }}
+                      animate={{ y: [60, -80], opacity: [0, 0.65, 0] }}
+                      transition={{ duration: b.dur, repeat: Infinity, ease: 'easeInOut', delay: b.delay }}
+                    />
+                  ))}
+                </div>
+              );
+            default:
+              return (
+                <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(23,169,201,0.1)_0%,transparent_70%)] pointer-events-none" />
+                  {[0, 1, 2].map(i => (
+                    <motion.div
+                      key={i}
+                      className="absolute rounded-full border border-[#21e8ff]"
+                      style={{ width: 60 + i * 50, height: 60 + i * 50, opacity: 0.2 - i * 0.05 }}
+                      animate={{ scale: [1, 1.2, 1] }}
+                      transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.6 }}
+                    />
+                  ))}
+                  <div className="w-4 h-4 rounded-full bg-[#21e8ff] shadow-[0_0_24px_rgba(33,232,255,0.8)] z-10" />
+                </div>
+              );
+          }
+        })();
+
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="relative rounded-[28px] overflow-hidden"
+            style={{
+              background: 'linear-gradient(160deg, #13161e 0%, #0f1117 100%)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              boxShadow: '0 24px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)',
+              minHeight: '520px',
+            }}
+          >
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#17A9C9]/30 to-transparent pointer-events-none z-10" />
+            <div className="grid grid-cols-1 lg:grid-cols-2 h-full">
+              {/* LEFT — Activity visual + Start */}
+              <div className="relative flex flex-col border-b border-white/[0.05] lg:border-b-0 lg:border-r">
+                <div className="absolute -bottom-24 -right-12 w-56 h-56 bg-[#17A9C9]/5 rounded-full blur-[70px] pointer-events-none" />
+
+                {/* Animation canvas */}
+                <div className="flex-1 relative min-h-[380px]">
+                  {activityVisual}
+                </div>
+
+                {/* Start / Mark Complete button */}
+                <div className="px-7 pb-7 pt-4">
+                  <div className="h-px mb-4" style={{ background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.06), transparent)' }} />
+                  {ritualCompleted ? (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.92 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="w-full py-4 rounded-xl flex items-center justify-center gap-2.5"
+                      style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.45)' }}
+                    >
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span className="text-[11.5px] tracking-[0.22em] uppercase font-semibold text-emerald-400">Complete!</span>
+                    </motion.div>
+                  ) : ritualStarted ? (
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center gap-2 justify-center">
+                        <motion.div
+                          className="w-1.5 h-1.5 rounded-full bg-emerald-400"
+                          animate={{ opacity: [1, 0.3, 1] }}
+                          transition={{ duration: 1.4, repeat: Infinity }}
+                        />
+                        <span className="text-[9.5px] font-mono uppercase tracking-[0.2em] text-zinc-500">Session in progress</span>
+                      </div>
+                      <button
+                        onClick={handleMarkComplete}
+                        className="relative overflow-hidden w-full py-4 rounded-xl flex items-center justify-center gap-2.5 cursor-pointer group/done transition-all duration-300"
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(16,185,129,0.22) 0%, rgba(16,185,129,0.10) 100%)',
+                          border: '1px solid rgba(16,185,129,0.55)',
+                          boxShadow: '0 0 28px rgba(16,185,129,0.18), inset 0 1px 0 rgba(16,185,129,0.2)',
+                        }}
+                      >
+                        <div className="absolute inset-0 w-2/5 h-full bg-gradient-to-r from-transparent via-white/[0.08] to-transparent -skew-x-12 -translate-x-full group-hover/done:translate-x-[300%] transition-transform duration-[900ms] ease-in-out pointer-events-none" />
+                        <Check className="w-3.5 h-3.5 text-emerald-400 group-hover/done:text-white transition-colors duration-300 relative z-10" />
+                        <span className="text-[11.5px] tracking-[0.22em] uppercase font-semibold text-emerald-400 group-hover/done:text-white transition-colors duration-300 relative z-10">
+                          Mark Complete
+                        </span>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setRitualStarted(true)}
+                      className="relative overflow-hidden w-full py-4 rounded-xl flex items-center justify-center gap-2.5 cursor-pointer group/start transition-all duration-300"
+                      style={{
+                        background: `linear-gradient(135deg, ${heroTheme.accent}38 0%, ${heroTheme.accent}1a 100%)`,
+                        border: `1px solid ${heroTheme.accent}8c`,
+                        boxShadow: `0 0 28px ${heroTheme.accent}26, inset 0 1px 0 ${heroTheme.accent}2e`,
+                      }}
+                    >
+                      <div className="absolute inset-0 w-2/5 h-full bg-gradient-to-r from-transparent via-white/[0.08] to-transparent -skew-x-12 -translate-x-full group-hover/start:translate-x-[300%] transition-transform duration-[900ms] ease-in-out pointer-events-none" />
+                      <Play className="w-3.5 h-3.5 transition-colors duration-300 relative z-10" style={{ fill: heroTheme.accent, color: heroTheme.accent }} />
+                      <span className="text-[11.5px] tracking-[0.22em] uppercase font-semibold transition-colors duration-300 relative z-10" style={{ color: heroTheme.accent }}>
+                        Start
+                      </span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <h1 className="text-xl font-medium text-zinc-100 mb-2 leading-tight">
-                {selectedRitual.name}
-              </h1>
-              
-              <p className="text-xs text-zinc-400 leading-relaxed mb-6 border-b border-zinc-900 pb-4">
-                {selectedRitual.description}
-              </p>
+              {/* RIGHT — Title + Steps + View Details */}
+              <div className="relative flex flex-col" style={{ background: 'rgba(255,255,255,0.055)' }}>
+                {/* Accent glow behind header */}
+                <div className="absolute top-0 left-0 right-0 h-40 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 60% 0%, rgba(23,169,201,0.07) 0%, transparent 70%)' }} />
+                <div className="absolute -bottom-24 -left-12 w-56 h-56 rounded-full blur-[70px] pointer-events-none" style={{ background: `${heroTheme.accent}0d` }} />
 
-              {/* Step By Step Progress list */}
-              <div className="mb-6">
-                <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-450 mb-3 block">
-                  Instruction Workbook ({selectedRitual.instructionSteps.length} Steps)
-                </h3>
-                <div className="flex flex-col gap-2.5">
-                  {selectedRitual.instructionSteps.map((stepText, idx) => {
-                    const isStepActive = idx === activeStep;
-                    const isStepPassed = idx < activeStep;
-                    return (
-                      <div
-                        key={idx}
-                        onClick={() => setActiveStep(idx)}
-                        className={`p-3.5 rounded-2xl border transition-all duration-300 cursor-pointer flex gap-3 ${
-                          isStepActive 
-                            ? 'bg-[#17A9C9]/8 border-[#17A9C9]/35 text-white' 
-                            : isStepPassed 
-                              ? 'bg-zinc-950/20 border-zinc-900/70 text-zinc-500' 
-                              : 'bg-zinc-900/20 border-transparent hover:border-zinc-800/40 text-zinc-400'
-                        }`}
+                {/* Routine position + tooltip */}
+                {isInRoutine && (
+                  <div className="absolute top-6 right-7 z-20 group/counter">
+                    <div className="flex items-baseline gap-1 cursor-default select-none">
+                      <span className="text-[18px] font-light leading-none text-white">{routineIndex + 1}</span>
+                      <span className="text-[11px] text-zinc-500 font-light">/</span>
+                      <span className="text-[13px] text-zinc-400 font-light">{dailyRitualIds.length}</span>
+                    </div>
+
+                    {/* Tooltip */}
+                    <div
+                      className="absolute top-full right-0 mt-2.5 w-56 pointer-events-none opacity-0 translate-y-1 group-hover/counter:opacity-100 group-hover/counter:translate-y-0 transition-all duration-200 ease-out"
+                      style={{
+                        background: 'linear-gradient(to bottom, rgba(17,19,25,0.98), rgba(12,14,18,0.98))',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: '14px',
+                        boxShadow: '0 16px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)',
+                      }}
+                    >
+                      <div className="absolute top-0 left-0 right-0 h-px rounded-t-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                      <div className="py-1.5">
+                        {dailyRituals.map((ritual, i) => {
+                          const isCurrent = i === routineIndex;
+                          const isDone = completedRitualIds.includes(ritual.id);
+                          return (
+                            <div
+                              key={ritual.id}
+                              className="flex items-center gap-3 px-4 py-2.5"
+                              style={isCurrent ? { background: 'rgba(255,255,255,0.04)' } : {}}
+                            >
+                              <div className="w-3.5 flex-shrink-0 flex items-center justify-center">
+                                {isDone && <Check className="w-3 h-3 text-[#21e8ff]" />}
+                              </div>
+                              <span className={`text-[11px] leading-snug truncate ${isDone ? 'text-zinc-500' : isCurrent ? 'text-white' : 'text-zinc-400'}`}>
+                                {ritual.name}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-8 pb-5 relative z-10">
+                  {/* Header */}
+                  <div className="mb-8">
+                    <span className={`inline-block text-[9.5px] font-mono tracking-[0.18em] uppercase px-3 py-1 rounded-full border mb-3 ${heroTheme.badge}`}>
+                      {selectedRitual.category}
+                    </span>
+                    <h1 className="text-[1.75rem] font-semibold tracking-tight text-white leading-tight mb-2.5">
+                      {selectedRitual.name}
+                    </h1>
+                    <span className="text-[9.5px] font-mono uppercase tracking-[0.18em] text-zinc-300 bg-zinc-800/50 border border-zinc-700/50 px-3 py-1 rounded-full">
+                      {selectedRitual.primaryFocus}
+                    </span>
+                  </div>
+
+                  <p className="text-[9.5px] font-mono uppercase tracking-[0.2em] mb-5 text-white">
+                    Steps
+                  </p>
+
+                  {/* Connected steps */}
+                  <div className="relative flex flex-col">
+                    {selectedRitual.instructionSteps.map((step, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, x: -6 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.25, delay: i * 0.06 }}
+                        className="flex gap-4 items-start relative -mx-2 px-2 py-2.5 rounded-xl cursor-default"
                       >
-                        <div className={`w-5 h-5 rounded-md flex items-center justify-center text-[10.5px] font-mono font-bold flex-shrink-0 ${
-                          isStepActive 
-                            ? 'bg-[#21e8ff] text-zinc-950 shadow-[0_0_8px_#21e8ff]' 
-                            : isStepPassed 
-                              ? 'bg-zinc-800 text-zinc-500' 
-                              : 'bg-zinc-900 text-zinc-500 border border-zinc-800'
-                        }`}>
-                          {isStepPassed ? <Check className="w-3.5 h-3.5 stroke-[2.5]" /> : idx + 1}
+                        {/* Connector to next step — only between boxes */}
+                        {i < selectedRitual.instructionSteps.length - 1 && (
+                          <div className="absolute left-[21px] top-[38px] bottom-0 w-px pointer-events-none" style={{ background: 'linear-gradient(to bottom, rgba(255,255,255,0.15), rgba(255,255,255,0.04))' }} />
+                        )}
+                        <div
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-mono font-bold flex-shrink-0 relative z-10"
+                          style={{
+                            background: '#181c25',
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            color: '#ffffff',
+                          }}
+                        >
+                          {i + 1}
                         </div>
-                        <div className="flex-1 text-[11.5px] leading-relaxed select-text">
-                          {stepText}
+                        <p className="text-[13.5px] text-zinc-200 leading-relaxed pt-1">{step}</p>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* View Details + Exit */}
+                <div className="px-8 pb-8 pt-2 mt-auto relative z-10">
+                  <div className="h-px mb-4" style={{ background: `linear-gradient(to right, transparent, ${heroTheme.accent}20, transparent)` }} />
+                  <div className="flex gap-3">
+                    <button
+                      onClick={viewDetails}
+                      className="flex-1 py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer group/details"
+                      style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)';
+                        (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(255,255,255,0.14)';
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.03)';
+                        (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(255,255,255,0.08)';
+                      }}
+                    >
+                      <span className="text-[11px] font-mono uppercase tracking-[0.18em] text-zinc-300 group-hover/details:text-white transition-colors duration-200">
+                        View Details
+                      </span>
+                    </button>
+                    <button
+                      onClick={exitActivity}
+                      className="py-3.5 px-4 rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer group/exit"
+                      style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.08)';
+                        (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(239,68,68,0.25)';
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.03)';
+                        (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(255,255,255,0.08)';
+                      }}
+                    >
+                      <X className="w-3.5 h-3.5 text-zinc-400 group-hover/exit:text-red-400 transition-colors duration-200" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        );
+      })() : (() => {
+        const heroTheme = getDetailHeroTheme(selectedRitual.category);
+        const HeroIcon = heroTheme.Icon;
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+            className="flex flex-col"
+          >
+            {/* Back button */}
+            <div className="mb-6 flex items-center gap-3">
+              <button
+                onClick={() => { setSelectedRitual(null); setShowBenefitsModal(false); }}
+                className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer hover:scale-105"
+                style={{ background: 'rgba(23,169,201,0.06)', border: '1px solid rgba(33,232,255,0.15)' }}
+              >
+                <ChevronLeft className="w-4 h-4 text-[#21e8ff]" />
+              </button>
+              <span className="text-[11px] font-mono tracking-widest uppercase text-zinc-500">Ritual Library</span>
+            </div>
+
+            {/* 2-column grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+
+              {/* LEFT — Steps + Actions */}
+              <div
+                className="relative rounded-[28px] overflow-hidden flex flex-col"
+                style={{
+                  background: 'linear-gradient(160deg, #13161e 0%, #0f1117 100%)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  boxShadow: '0 24px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)',
+                }}
+              >
+                {/* Top sheen */}
+                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#17A9C9]/30 to-transparent" />
+                {/* Ambient corner glow */}
+                <div className="absolute -bottom-24 -left-12 w-56 h-56 bg-[#17A9C9]/6 rounded-full blur-[70px] pointer-events-none" />
+
+                <div className="p-7 pb-5">
+                  {/* Description */}
+                  <span className="inline-block text-[9.5px] font-mono uppercase tracking-[0.18em] text-zinc-600 bg-zinc-900/60 border border-zinc-800/50 px-3 py-1 rounded-full mb-3">
+                    {selectedRitual.primaryFocus}
+                  </span>
+                  <p className="text-[13px] text-zinc-400 leading-[1.8] border-l-2 border-[#17A9C9]/25 pl-4 mb-7">
+                    {selectedRitual.description}
+                  </p>
+
+                  <p className="text-[9.5px] font-mono uppercase tracking-[0.2em] text-zinc-500 mb-6">
+                    How to do it
+                  </p>
+
+                  {/* Steps with connecting line */}
+                  <div className="relative flex flex-col">
+                    {selectedRitual.instructionSteps.map((step, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, x: -6 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.25, delay: i * 0.06 }}
+                        className="flex gap-4 items-start relative group/step -mx-2 px-2 py-2.5 rounded-xl hover:bg-white/[0.025] transition-colors duration-200 cursor-default"
+                      >
+                        {i < selectedRitual.instructionSteps.length - 1 && (
+                          <div className="absolute left-[21px] top-[38px] bottom-0 w-px pointer-events-none" style={{ background: 'linear-gradient(to bottom, rgba(23,169,201,0.35), rgba(23,169,201,0.08))' }} />
+                        )}
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-mono font-bold flex-shrink-0 relative z-10 transition-all duration-200 group-hover/step:shadow-[0_0_16px_rgba(23,169,201,0.3)]"
+                          style={{
+                            background: '#0f1117',
+                            border: '1px solid rgba(23,169,201,0.35)',
+                            color: '#21e8ff',
+                          }}
+                        >
+                          {i + 1}
+                        </div>
+                        <p className="text-[13px] text-zinc-400 group-hover/step:text-zinc-200 leading-relaxed pt-1 transition-colors duration-200">{step}</p>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Actions area */}
+                <div className="px-7 pb-7 pt-2 mt-auto">
+                  <div className="h-px mb-4" style={{ background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.06), transparent)' }} />
+
+                  <div className="flex gap-2.5">
+                    {/* Why it works button */}
+                    <button
+                      onClick={() => setShowBenefitsModal(true)}
+                      className="flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl transition-all duration-200 cursor-pointer group/why flex-shrink-0"
+                      style={{
+                        background: 'rgba(255,255,255,0.025)',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(23,169,201,0.06)';
+                        (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(23,169,201,0.25)';
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.025)';
+                        (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(255,255,255,0.06)';
+                      }}
+                    >
+                      <span className="text-[11px] font-mono uppercase tracking-[0.15em] text-zinc-400 group-hover/why:text-white transition-colors duration-200 whitespace-nowrap">
+                        Why it works
+                      </span>
+                      <span className="text-[9.5px] font-mono text-[#21e8ff]/50 bg-[#17A9C9]/10 border border-[#17A9C9]/20 px-1.5 py-0.5 rounded-full tabular-nums">
+                        {selectedRitual.benefits.length}
+                      </span>
+                    </button>
+
+                    {/* Start Ritual CTA */}
+                    <button
+                      onClick={launchActivity}
+                      className="relative overflow-hidden flex-1 py-3.5 rounded-xl flex items-center justify-center gap-2.5 cursor-pointer group/start transition-all duration-300"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(23,169,201,0.22) 0%, rgba(33,232,255,0.10) 100%)',
+                        border: '1px solid rgba(33,232,255,0.55)',
+                        boxShadow: '0 0 28px rgba(33,232,255,0.15), 0 0 60px rgba(23,169,201,0.07), inset 0 1px 0 rgba(33,232,255,0.18)',
+                      }}
+                    >
+                      {/* Shimmer sweep */}
+                      <div className="absolute inset-0 w-2/5 h-full bg-gradient-to-r from-transparent via-white/[0.08] to-transparent -skew-x-12 -translate-x-full group-hover/start:translate-x-[300%] transition-transform duration-[900ms] ease-in-out pointer-events-none" />
+                      {fromRoutine ? (
+                        <ArrowRight className="w-3.5 h-3.5 text-[#21e8ff] group-hover/start:text-white transition-colors duration-300 relative z-10" />
+                      ) : (
+                        <Play className="w-3.5 h-3.5 fill-[#21e8ff] group-hover/start:fill-white transition-colors duration-300 relative z-10" />
+                      )}
+                      <span className="text-[11.5px] tracking-[0.22em] uppercase font-semibold text-[#21e8ff] group-hover/start:text-white transition-colors duration-300 relative z-10">
+                        {fromRoutine ? 'Continue' : 'Start Ritual'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* RIGHT — Hero + Description */}
+              <div
+                className="rounded-[28px] overflow-hidden relative flex flex-col"
+                style={{
+                  background: 'linear-gradient(160deg, #13161e 0%, #0f1117 100%)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  boxShadow: '0 24px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)',
+                }}
+              >
+                {/* Media */}
+                <div
+                  className={`relative h-[22rem] flex items-center justify-center overflow-hidden ${heroTheme.bg}`}
+                  data-slot="ritual-media"
+                >
+                  {/* Animated breathing glow */}
+                  <motion.div
+                    className={`absolute inset-0 ${heroTheme.glow} pointer-events-none`}
+                    animate={{ opacity: [0.55, 1, 0.55] }}
+                    transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                  {/* Secondary radial pulse */}
+                  <motion.div
+                    className="absolute inset-0 pointer-events-none"
+                    animate={{ scale: [1, 1.08, 1], opacity: [0.3, 0.6, 0.3] }}
+                    transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+                    style={{ background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.04) 0%, transparent 60%)' }}
+                  />
+
+                  {/* Floating icon */}
+                  <motion.div
+                    animate={{ y: [0, -10, 0] }}
+                    transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
+                    className="relative z-10"
+                  >
+                    <HeroIcon className={`w-40 h-40 ${heroTheme.iconColor} opacity-[0.12]`} />
+                  </motion.div>
+
+                  {/* Badges */}
+                  <div className="absolute top-4 left-4 z-20">
+                    <span className={`text-[9.5px] font-mono tracking-[0.18em] uppercase px-3 py-1 rounded-full border backdrop-blur-sm ${heroTheme.badge}`}>
+                      {selectedRitual.category}
+                    </span>
+                  </div>
+                  <div className="absolute top-4 right-4 z-20">
+                    <span className="text-[9.5px] font-mono text-zinc-400 tracking-wider bg-zinc-950/70 backdrop-blur-sm border border-zinc-800/60 px-2.5 py-1 rounded-full">
+                      {selectedRitual.difficulty}
+                    </span>
+                  </div>
+
+                  {/* Bottom name strip — gradient fades into card bg */}
+                  <div className="absolute bottom-0 left-0 right-0 z-20 p-5 pt-20"
+                    style={{ background: 'linear-gradient(to top, #13161e 0%, #13161e 30%, transparent 100%)' }}
+                  >
+                    <h1 className="text-[22px] font-light tracking-tight text-white leading-tight">{selectedRitual.name}</h1>
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <Clock className="w-3 h-3 text-zinc-500" />
+                      <span className="text-[11px] text-zinc-500 font-mono">{selectedRitual.duration}</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* Benefits modal */}
+            <AnimatePresence>
+              {showBenefitsModal && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-lg"
+                  style={{ background: 'rgba(7,8,11,0.82)' }}
+                  onClick={() => setShowBenefitsModal(false)}
+                >
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.94, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.94, y: 10 }}
+                    transition={{ duration: 0.22, ease: 'easeOut' }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="relative w-full max-w-md rounded-[28px] overflow-hidden"
+                    style={{
+                      background: 'linear-gradient(160deg, #0e1118 0%, #0a0c11 100%)',
+                      border: '1px solid rgba(23,169,201,0.2)',
+                      boxShadow: '0 0 0 1px rgba(0,0,0,0.5), 0 40px 80px rgba(0,0,0,0.7), 0 0 40px rgba(23,169,201,0.05)',
+                    }}
+                  >
+                    <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#21e8ff]/25 to-transparent" />
+                    <div className="absolute -right-16 -top-16 w-48 h-48 rounded-full blur-[60px] pointer-events-none" style={{ background: 'rgba(23,169,201,0.07)' }} />
+
+                    <div className="flex items-center justify-between p-6 pb-4 relative z-10">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(23,169,201,0.15)', border: '1px solid rgba(23,169,201,0.3)' }}>
+                          <Sparkles className="w-3.5 h-3.5 text-[#21e8ff]" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-semibold text-white leading-none">Why it works</h3>
+                          <p className="text-[10px] text-zinc-500 font-mono mt-0.5">{selectedRitual.benefits.length} clinical benefits</p>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Scientific Benefits Section */}
-              <div className="bg-zinc-900/30 border border-zinc-850/50 p-4.5 rounded-2xl">
-                <h4 className="text-[10.5px] font-mono text-zinc-400 uppercase tracking-widest mb-2.5 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-[#21e8ff]" />
-                  Acoustic & Musculoskeletal Benefits
-                </h4>
-                <ul className="flex flex-col gap-2 pl-1.5">
-                  {selectedRitual.benefits.map((benefit, bIdx) => (
-                    <li key={bIdx} className="text-[11px] text-zinc-400 flex items-start gap-2 leading-relaxed">
-                      <span className="text-[#21e8ff] text-xs font-mono mt-0.5">•</span>
-                      <span>{benefit}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-            </div>
-          </div>
-
-          {/* Interactive Calibration guide and Pacer (5 Columns) */}
-          <div className="lg:col-span-5 flex flex-col gap-4 relative">
-            <div className="bg-gradient-to-b from-[#17A9C9]/12 to-[#12141a]/95 border border-[#17A9C9]/25 rounded-[28px] p-6 shadow-[0_0_20px_rgba(23,169,201,0.05)] w-full flex flex-col items-center justify-between text-center min-h-[480px]">
-              
-              {/* Top ambient glow line */}
-              <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-[#17A9C9]/35 to-transparent" />
-
-              {/* Complete state Overlay */}
-              {showCompletedOverlay && (
-                <div className="absolute inset-0 bg-[#0d0f14]/98 z-30 flex flex-col items-center justify-center p-6 rounded-[28px] animate-fade-in select-none">
-                  <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/35 flex items-center justify-center text-emerald-400 mb-4 shadow-[0_0_15px_rgba(16,185,129,0.15)] animate-bounce">
-                    <Trophy className="w-7 h-7" />
-                  </div>
-                  <h3 className="text-lg font-medium text-white mb-1.5">Daily Exercise Logged</h3>
-                  <p className="text-xs text-zinc-400 max-w-xs leading-relaxed mb-6">
-                    Sensory parameters successfully calibrated! "{selectedRitual.name}" has been completed and cataloged under your active checklist.
-                  </p>
-                  <div className="flex flex-col w-full gap-2 px-6">
-                    <button
-                      onClick={() => {
-                        setShowCompletedOverlay(false);
-                        resetPractice();
-                      }}
-                      className="w-full py-2.5 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-850 text-white rounded-xl text-xs font-medium cursor-pointer transition-colors"
-                    >
-                      Practice Again
-                    </button>
-                    <button
-                      onClick={() => setSelectedRitual(null)}
-                      className="w-full py-2.5 bg-gradient-to-r from-[#17A9C9]/80 to-[#128ba5]/80 hover:from-[#17A9C9] hover:to-[#128ba5] text-zinc-950 font-bold rounded-xl text-xs cursor-pointer transition-colors"
-                    >
-                      Return to Library
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Title indicator */}
-              <div className="mb-2">
-                <span className="text-[10px] font-mono text-[#21e8ff] uppercase tracking-widest bg-[#17A9C9]/10 px-2.5 py-0.5 rounded-full border border-[#17A9C9]/15">
-                  Vocal Guided practice
-                </span>
-                <p className="text-[10.5px] text-zinc-550 mt-2">Activate the loop and follow the vocal expansion orb</p>
-              </div>
-
-              {/* Guided Breathing Expansion Circle Pacer */}
-              <div className="my-6 relative flex items-center justify-center w-48 h-48">
-                {/* Decorative outer rings */}
-                <div className="absolute inset-0 rounded-full border border-zinc-800/30" />
-                <div className="absolute inset-3 rounded-full border border-zinc-800/40" />
-                <div className="absolute inset-8 rounded-full border border-zinc-850/60" />
-
-                {/* Expanding Glowing Orb */}
-                <div 
-                  className="rounded-full bg-gradient-to-tr from-[#17A9C9]/20 to-[#21e8ff]/30 border border-[#17A9C9]/50 shadow-[0_0_35px_rgba(23,169,201,0.25)] flex flex-col items-center justify-center transition-all duration-300 relative"
-                  style={{
-                    width: `${breathProgress}%`,
-                    height: `${breathProgress}%`,
-                    minWidth: '40px',
-                    minHeight: '40px'
-                  }}
-                >
-                  {/* Subtle inner particle */}
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#21e8ff] absolute top-1/4 left-1/4 animate-pulse" />
-                </div>
-
-                {/* Exact center label, layered above the expanding orb */}
-                <div className="absolute pointer-events-none flex flex-col items-center justify-center select-none z-10">
-                  <span className="text-xl font-mono font-medium tracking-tight text-white mb-0.5">
-                    {formattedTime(timeLeft)}
-                  </span>
-                  <span className="text-[10px] font-sans font-semibold uppercase tracking-widest text-[#21e8ff] bg-zinc-950/70 border border-zinc-900 px-2 py-0.5 rounded-full shadow-md">
-                    {isPlaying ? breathingPhase : 'Guide Idle'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Pitch Frequency Sweep (SOVT / humming companion calibration) */}
-              <div className="w-full bg-zinc-950/50 border border-zinc-900 rounded-2xl p-4 mb-5 shadow-inner">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-mono text-zinc-450 uppercase flex items-center gap-1.5">
-                    <Volume2 className="w-3.5 h-3.5 text-[#21e8ff]" />
-                    F0 Resonance Calibrator
-                  </span>
-                  <span className="text-xs font-mono font-bold text-zinc-300">{pitchValue} Hz</span>
-                </div>
-                
-                {/* Custom waveform simulation line */}
-                <div className="h-6 w-full flex items-center justify-center gap-0.5 mb-2.5 overflow-hidden px-2">
-                  {[...Array(24)].map((_, barIdx) => {
-                    // Random-ish high-precision sine wave based on play state and index
-                    const sineVal = Math.sin((barIdx / 2) + (isPlaying ? Date.now() / 250 : 0));
-                    const waveHeight = isPlaying 
-                      ? Math.abs(sineVal) * 16 + 2 
-                      : 2;
-                    return (
-                      <div 
-                        key={barIdx}
-                        className="w-1 rounded-full bg-[#17A9C9]/40 transition-all duration-150"
-                        style={{ 
-                          height: `${waveHeight}px`,
-                          backgroundColor: isPlaying && barIdx % 3 === 0 ? '#21e8ff' : undefined
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <span className="text-[9px] font-mono text-zinc-500">Low (80Hz)</span>
-                  <input
-                    type="range"
-                    min="80"
-                    max="440"
-                    value={pitchValue}
-                    onChange={(e) => setPitchValue(Number(e.target.value))}
-                    className="flex-1 accent-[#17A9C9] h-[3px] bg-zinc-800 rounded-lg cursor-pointer"
-                  />
-                  <span className="text-[9px] font-mono text-zinc-500">High (440Hz)</span>
-                </div>
-              </div>
-
-              {/* Master Control Board */}
-              <div className="w-full grid grid-cols-12 gap-3">
-                {/* Secondary: Reset */}
-                <button
-                  onClick={resetPractice}
-                  className="col-span-3 py-3 border border-zinc-900 hover:border-zinc-800 hover:bg-zinc-800/30 text-zinc-400 hover:text-white rounded-2xl flex items-center justify-center cursor-pointer transition-colors"
-                  title="Reset timer"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-
-                {/* Primary: Start/Pause */}
-                <button
-                  onClick={togglePlayback}
-                  className={`col-span-6 py-3 px-3 rounded-2xl flex items-center justify-center gap-2 font-semibold text-xs tracking-wider uppercase transition-all duration-300 cursor-pointer ${
-                    isPlaying 
-                      ? 'bg-zinc-900 border border-zinc-800 text-amber-500' 
-                      : 'bg-[#21e8ff] hover:bg-[#21e8ff]/90 text-zinc-950 font-bold shadow-[0_0_15px_rgba(33,232,255,0.25)]'
-                  }`}
-                >
-                  {isPlaying ? (
-                    <>
-                      <Pause className="w-3.5 h-3.5 fill-current" />
-                      <span>Pause</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Start Calibration</span>
-                    </>
-                  )}
-                </button>
-
-                {/* Complete now button */}
-                <button
-                  onClick={handleCompleteRitual}
-                  className="col-span-3 py-3 bg-zinc-900 border border-zinc-850 hover:border-[#17A9C9]/35 hover:bg-[#17A9C9]/10 text-emerald-400 hover:text-emerald-300 rounded-2xl flex items-center justify-center cursor-pointer transition-all duration-300"
-                  title="Mark Completed"
-                >
-                  <Check className="w-4 h-4 stroke-[2.5]" />
-                </button>
-              </div>
-
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {/* Performance & Habit Consistency Analytics */}
-      <div className="mt-12">
-        <h2 className="text-base font-light tracking-tight text-white mb-4 font-display">
-          Your Progress
-        </h2>
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* 7-Day Activity Visualizer Panel */}
-          <div className="lg:col-span-7 bg-[#181b22]/90 backdrop-blur-[12px] border border-zinc-800/80 rounded-[28px] p-5.5 hover:bg-[#1d212a]/95 hover:border-zinc-700/60 transition-all duration-300 shadow-[0_12px_45px_rgba(0,0,0,0.45)] relative overflow-hidden flex flex-col justify-between group">
-            {/* Top glass reflection light */}
-            <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-[#17A9C9]/35 to-transparent" />
-            
-            {/* Soft, premium decorative glow orb inside background */}
-            <div className="absolute -bottom-16 -left-12 w-64 h-32 bg-[#17A9C9]/10 rounded-full blur-[45px] pointer-events-none transition-all duration-500 group-hover:bg-[#17A9C9]/15 group-hover:scale-110 z-0" />
-            
-            <div className="flex flex-col flex-grow justify-between relative z-10">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-zinc-200 tracking-wide mb-1 flex items-center gap-2">
-                    7-Day Practice Consistency
-                  </h3>
-                  <p className="text-[11px] text-zinc-500">
-                    Visualizing calibration ritual completions and target routine health over the last 7 cycles.
-                  </p>
-                </div>
-              </div>
-
-              {/* Chart Window */}
-              <div className="h-48 w-full text-zinc-400 mt-1">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={[
-                    { name: 'Tue', completed: 1, date: 'Jun 09' },
-                    { name: 'Wed', completed: 2, date: 'Jun 10' },
-                    { name: 'Thu', completed: 1, date: 'Jun 11' },
-                    { name: 'Fri', completed: 3, date: 'Jun 12' },
-                    { name: 'Sat', completed: 0, date: 'Jun 13' },
-                    { name: 'Sun', completed: 2, date: 'Jun 14' },
-                    { name: 'Today', completed: completedCount, date: 'Jun 15' },
-                  ]} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorCompletions" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#17A9C9" stopOpacity={0.25}/>
-                        <stop offset="95%" stopColor="#17A9C9" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1b1e2a" />
-                    <XAxis 
-                      dataKey="name" 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{ fill: '#71717a', fontSize: 10, fontFamily: 'monospace' }}
-                    />
-                    <YAxis 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{ fill: '#71717a', fontSize: 10, fontFamily: 'monospace' }}
-                      allowDecimals={false}
-                    />
-                    <Tooltip 
-                      content={<CustomTooltip />}
-                      cursor={{ stroke: '#1c343d', strokeWidth: 1 }}
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="completed" 
-                      stroke="#21e8ff" 
-                      strokeWidth={2}
-                      fillOpacity={1} 
-                      fill="url(#colorCompletions)" 
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Minimal High-Fidelity Stats Bar */}
-            <div className="mt-4 pt-3.5 border-t border-zinc-800/60 grid grid-cols-3 gap-3 text-center relative z-10">
-              <div className="bg-gradient-to-br from-[#101217] to-[#0d0e13]/90 border border-zinc-800/60 rounded-2xl p-2.5 shadow-inner hover:border-zinc-700/60 transition-colors duration-300">
-                <span className="block text-[8.5px] font-mono uppercase tracking-wider text-zinc-500">Average Pace</span>
-                <span className="block text-xs font-semibold text-white mt-0.5 font-sans">
-                  {((1 + 2 + 1 + 3 + 0 + 2 + completedCount) / 7).toFixed(1)} <span className="text-[9px] text-zinc-500 font-normal">/ day</span>
-                </span>
-              </div>
-              <div className="bg-gradient-to-br from-[#101217] to-[#0d0e13]/90 border border-zinc-800/60 rounded-2xl p-2.5 shadow-inner hover:border-zinc-700/60 transition-colors duration-300">
-                <span className="block text-[8.5px] font-mono uppercase tracking-wider text-zinc-500">Total Complete</span>
-                <span className="block text-xs font-semibold text-white mt-0.5 font-sans">
-                  {1 + 2 + 1 + 3 + 0 + 2 + completedCount} <span className="text-[9px] text-zinc-500 font-normal">tasks</span>
-                </span>
-              </div>
-              <div className="bg-gradient-to-br from-[#101217] to-[#0d0e13]/90 border border-zinc-800/60 rounded-2xl p-2.5 shadow-inner hover:border-zinc-700/60 transition-colors duration-300">
-                <span className="block text-[8.5px] font-mono uppercase tracking-wider text-zinc-500">Habit Health</span>
-                <span className="block text-xs font-semibold text-[#21e8ff] mt-0.5 font-sans">
-                  {Math.round(((1 + 2 + 1 + 3 + 0 + 2 + completedCount) / 14) * 100)}%
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Month-View Mini-Calendar Panel */}
-          <div className="lg:col-span-5 bg-[#181b22]/90 backdrop-blur-[12px] border border-zinc-800/80 rounded-[28px] p-5.5 hover:bg-[#1d212a]/95 hover:border-zinc-700/60 transition-all duration-300 shadow-[0_12px_45px_rgba(0,0,0,0.45)] relative overflow-hidden flex flex-col justify-between group">
-            {/* Top glass reflection light */}
-            <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-[#17A9C9]/35 to-transparent" />
-            
-            {/* Soft, premium decorative glow orb inside background */}
-            <div className="absolute -bottom-16 -right-12 w-64 h-32 bg-[#21e8ff]/10 rounded-full blur-[45px] pointer-events-none transition-all duration-500 group-hover:bg-[#21e8ff]/15 group-hover:scale-110 z-0" />
-            
-            <div className="relative z-10">
-              <div className="flex items-center justify-between gap-4 mb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-zinc-200 tracking-wide mb-1 flex items-center gap-2">
-                    Official Tracker
-                  </h3>
-                  <p className="text-[11px] text-zinc-500 font-sans">
-                    Daily practice completions and active monthly calendar consistency.
-                  </p>
-                </div>
-                <span className="text-xs font-mono font-medium text-[#21e8ff] bg-[#17A9C9]/10 px-2.5 py-1 rounded-xl border border-[#17A9C9]/20 shadow-inner">
-                  {currentMonthName} {currentYearNum}
-                </span>
-              </div>
-
-              {/* Calendar Grid */}
-              <div className="grid grid-cols-7 gap-y-1 gap-x-1 text-center mt-3">
-                {/* Day headers */}
-                {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((wd, i) => (
-                  <span key={i} className="text-[9px] font-mono text-zinc-650 font-bold uppercase tracking-wider py-0.5">
-                    {wd}
-                  </span>
-                ))}
-
-                {/* Day elements */}
-                {calendarDays.map((day, idx) => {
-                  if (day === null) {
-                    return <div key={`empty-${idx}`} />;
-                  }
-
-                  const isToday = day === currentDayNum;
-                  const isCompleted = completedDaysList.includes(day) || (isToday && completedCount === todos.length && todos.length > 0);
-                  
-                  return (
-                    <div 
-                      key={`day-${day}`}
-                      className={`relative py-1 flex items-center justify-center rounded-[10px] text-[10px] font-mono transition-all duration-300 select-none group focus:outline-none ${
-                        isToday 
-                          ? 'border border-[#21e8ff]/40 text-white font-bold bg-[#17A9C9]/10' 
-                          : isCompleted
-                          ? 'text-[#21e8ff] font-semibold bg-[#17A9C9]/15 border border-[#17A9C9]/35 shadow-[0_0_8px_rgba(23,169,201,0.08)]'
-                          : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/30'
-                      }`}
-                      title={
-                        isCompleted 
-                          ? `${currentMonthName} ${day} — All rituals completed!` 
-                          : isToday 
-                          ? `${currentMonthName} ${day} — Today (${completedCount}/${todos.length} completed)`
-                          : `${currentMonthName} ${day}`
-                      }
-                    >
-                      <span className="py-0.5">{day}</span>
+                      <button
+                        onClick={() => setShowBenefitsModal(false)}
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
 
-            {/* Legend / Metrics */}
-            <div className="mt-4 pt-3 border-t border-zinc-800/60 flex items-center justify-between text-[10px] font-mono text-zinc-500 relative z-10">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 bg-[#17A9C9]/15 border border-[#17A9C9]/35 rounded-md" />
-                <span>Perfect Day</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+                    <ul className="flex flex-col px-6 pb-6 gap-3 relative z-10">
+                      {selectedRitual.benefits.map((benefit, i) => (
+                        <motion.li
+                          key={i}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.18, delay: i * 0.05 }}
+                          className="flex items-start gap-3 py-3 border-b border-white/[0.04] last:border-0"
+                        >
+                          <div className="w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center text-[9.5px] font-mono font-bold mt-0.5"
+                            style={{ background: 'rgba(23,169,201,0.12)', border: '1px solid rgba(23,169,201,0.25)', color: '#21e8ff' }}
+                          >
+                            {i + 1}
+                          </div>
+                          <span className="text-[13px] text-zinc-300 leading-relaxed">{benefit}</span>
+                        </motion.li>
+                      ))}
+                    </ul>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        );
+      })()
+      }
+
     </div>
   );
 }
 
 interface CustomTooltipProps {
   active?: boolean;
-  payload?: Array<{
-    payload: {
-      name: string;
-      completed: number;
-      date: string;
-    };
-  }>;
+  payload?: Array<{ payload: { name: string; completed: number; date: string } }>;
   label?: string;
 }
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MapPin, Sparkles, Flame, ArrowRight } from 'lucide-react';
+import { MapPin, Sparkles, Flame } from 'lucide-react';
 import { Destination } from '../types';
 
 interface HeroSectionProps {
@@ -8,12 +8,11 @@ interface HeroSectionProps {
   setActiveSubTab: (tab: 'Overview' | 'Hotels' | 'Itinerary' | 'Flights') => void;
   isFavorited: boolean;
   onToggleFavorite: () => void;
+  onNavigateWeeklyReport: () => void;
 }
 
 export default function HeroSection({
   destination,
-  isFavorited,
-  onToggleFavorite,
 }: HeroSectionProps) {
   // Let user toggle between high fidelity Call of Duty HUD and beautiful scenic caldera photo!
   const [hudMode, setHudMode] = useState(true);
@@ -21,7 +20,7 @@ export default function HeroSection({
   // Render Call of Duty Campaign Tactical Dashboard for Santorini
   const renderTacticalHud = () => {
     return (
-      <div className="absolute inset-0 bg-gradient-to-b from-[#1c202a] via-[#181b22] to-[#12141a] flex flex-col justify-center gap-5 p-6 md:p-7 select-none overflow-hidden rounded-3xl border border-zinc-800/70 shadow-sm">
+      <div className="bg-gradient-to-b from-[#1c202a] via-[#181b22] to-[#12141a] flex flex-col p-7 md:p-8 select-none overflow-hidden rounded-3xl border border-zinc-800/70 shadow-sm relative">
         
         {/* Sleek top ambient glow line */}
         <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#17A9C9]/20 to-transparent" />
@@ -51,44 +50,6 @@ export default function HeroSection({
           </div>
         </div>
 
-        {/* Bottom segment: All stats wrapped into 3 beautiful buttons side-by-side */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-[11px] font-sans w-full z-10 mt-6 pb-1">
-          <button className="sm:col-span-2 relative flex items-center justify-between gap-3 bg-gradient-to-r from-[#17A9C9]/25 to-[#17A9C9]/10 backdrop-blur-md hover:from-[#17A9C9]/35 hover:to-[#17A9C9]/15 px-4 py-3.5 rounded-xl border border-[#17A9C9]/60 hover:border-[#17A9C9]/80 text-left transition-all duration-300 group cursor-pointer shadow-[0_0_20px_rgba(23,169,201,0.12)] overflow-hidden">
-            {/* Dynamic premium top highlight line */}
-            <div className="absolute top-0 left-0 w-0 h-[1.5px] bg-[#21e8ff] transition-all duration-500 group-hover:w-full" />
-            
-            <div className="flex items-center gap-2.5">
-              <span className="text-cyan-300 group-hover:text-[#21e8ff] text-[12px] font-medium tracking-wide font-display transition-colors duration-300">
-                Vocal Safety Status
-              </span>
-            </div>
-            <ArrowRight className="w-3.5 h-3.5 text-cyan-400 group-hover:text-[#21e8ff] group-hover:translate-x-0.5 transition-all duration-300" />
-          </button>
-          
-          <button className="sm:col-span-1 relative flex items-center justify-between gap-3 bg-zinc-900/30 backdrop-blur-md hover:bg-zinc-900/60 px-4 py-3.5 rounded-xl border border-zinc-800/80 hover:border-zinc-700/80 text-left transition-all duration-300 group cursor-pointer shadow-md overflow-hidden">
-            {/* Dynamic premium top highlight line */}
-            <div className="absolute top-0 left-0 w-0 h-[1.5px] bg-zinc-500/30 transition-all duration-500 group-hover:w-full" />
-            
-            <div className="flex items-center gap-2.5">
-              <span className="text-zinc-350 group-hover:text-white text-[12px] font-light tracking-wide font-display transition-colors duration-300">
-                Analyze Strain
-              </span>
-            </div>
-            <ArrowRight className="w-3.5 h-3.5 text-zinc-650 group-hover:text-zinc-300 group-hover:translate-x-0.5 transition-all duration-300" />
-          </button>
-
-          <button className="sm:col-span-1 relative flex items-center justify-between gap-3 bg-zinc-900/30 backdrop-blur-md hover:bg-zinc-900/60 px-4 py-3.5 rounded-xl border border-zinc-800/80 hover:border-zinc-700/80 text-left transition-all duration-300 group cursor-pointer shadow-md overflow-hidden">
-            {/* Dynamic premium top highlight line */}
-            <div className="absolute top-0 left-0 w-0 h-[1.5px] bg-zinc-500/30 transition-all duration-500 group-hover:w-full" />
-            
-            <div className="flex items-center gap-2.5">
-              <span className="text-zinc-350 group-hover:text-white text-[12px] font-light tracking-wide font-display transition-colors duration-300">
-                Session Report
-              </span>
-            </div>
-            <ArrowRight className="w-3.5 h-3.5 text-zinc-650 group-hover:text-zinc-300 group-hover:translate-x-0.5 transition-all duration-300" />
-          </button>
-        </div>
 
       </div>
     );
@@ -150,7 +111,7 @@ export default function HeroSection({
 
   return (
     <section className="w-full py-2 font-sans relative" id="destination-hero">
-      <div className="relative w-full min-h-[280px] sm:min-h-[220px] lg:min-h-[210px] xl:min-h-[200px] h-auto">
+      <div className="relative w-full h-auto">
         {destination.id === 'santorini' && hudMode ? renderTacticalHud() : renderScenicCard()}
       </div>
     </section>

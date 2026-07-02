@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import OnboardingFlow from './components/onboarding/OnboardingFlow';
+import { OnboardingData } from './types/onboarding';
 import Header from './components/Header';
 import HeroSection from './components/HeroSection';
 import WeatherWidget from './components/WeatherWidget';
@@ -7,10 +9,17 @@ import BusyWidget from './components/BusyWidget';
 import AcousticWidget from './components/AcousticWidget';
 import InteractiveMap from './components/InteractiveMap';
 import AssistantCard from './components/AssistantCard';
+import DashboardConsistencyChart from './components/DashboardConsistencyChart';
 import RitualsPage from './components/RitualsPage';
+import ReportsPage from './components/ReportsPage';
+import WeeklyReportPage from './components/WeeklyReportPage';
 import { DESTINATIONS } from './data';
-import { Destination, Attraction, Message, TodoItem } from './types';
-import { X, Sparkles, Shield, Bookmark, Terminal, HelpCircle } from 'lucide-react';
+import { Destination, Attraction, Message, Ritual } from './types';
+import { VocalReport } from './types/onboarding';
+import { EXERCISE_RITUALS } from './ritualsData';
+
+const DAILY_RITUAL_IDS = ['laryngeal-massage', 'humming-sirens', 'hydration-honey-cycle'];
+import { X, Sparkles, Shield, Bookmark, Terminal, HelpCircle, ArrowRight } from 'lucide-react';
 
 const DESTINATION_THEMES: Record<string, {
   color: string;       // main accent hex
@@ -55,36 +64,148 @@ const DESTINATION_THEMES: Record<string, {
 };
 
 export default function App() {
-  // Navigation View tracker
-  const [currentView, setCurrentView] = useState<'home' | 'rituals'>('home');
+  const [onboardingDone, setOnboardingDone] = useState(() =>
+    localStorage.getItem('vocalii_onboarding_complete') === 'true'
+  );
 
-  // Lifted To-Dos state
-  const [todos, setTodos] = useState<TodoItem[]>([
+  const handleOnboardingComplete = (data: OnboardingData) => {
+    // TODO: save data to Supabase users table
+    console.log('Onboarding complete:', data);
+    localStorage.setItem('vocalii_onboarding_complete', 'true');
+    setOnboardingDone(true);
+  };
+
+  // Navigation View tracker
+  const [currentView, setCurrentView] = useState<'home' | 'rituals' | 'reports' | 'weekly-report'>('home');
+
+  const [reports, setReports] = useState<VocalReport[]>([
     {
       id: '1',
-      title: 'Morning dynamic vocal stretch & posture calibration',
-      category: 'Warm-up',
-      completed: false,
+      ritualName: 'Voice Analysis',
+      category: 'Analysis',
+      date: 'Jun 22, 2026, 07:14 AM',
+      duration: '8 mins',
+      fatigueLevel: 22,
+      feelings: ['Tension', 'Breathiness'],
+      notes: 'Felt great this morning. Humming glides went smoothly, no tension in the larynx. Resonance felt balanced.',
+      insight: 'Strong resonance and clear tone detected. Vocal fold hydration appears optimal — continue current fluid intake. Well-suited for extended speaking today.',
+      pitchHz: 138,
+      pitchRangeHz: 64,
+      resonanceScore: 78,
+      clarityPct: 82,
     },
     {
       id: '2',
-      title: 'Hydrate: 500ml lukewarm water with honey cyclical intake',
-      category: 'Hydration',
-      completed: true,
+      ritualName: 'Voice Analysis',
+      category: 'Analysis',
+      date: 'Jun 21, 2026, 05:30 PM',
+      duration: '12 mins',
+      fatigueLevel: 71,
+      feelings: ['Fatigue', 'Dryness'],
+      notes: 'Back-to-back sessions today — two hours of presenting. Voice felt strained by the end. Completed yawn-sigh cycles and warm water hydration.',
+      insight: 'Signs of vocal fatigue detected — rest recommended. Some breathiness present, likely from extended use. Prioritize semi-occluded vocal tract exercises and warm fluids.',
+      pitchHz: 124,
+      pitchRangeHz: 38,
+      resonanceScore: 41,
+      clarityPct: 54,
     },
     {
       id: '3',
-      title: 'Larynx centering exercise via low hum sweeps',
-      category: 'Calibrate',
-      completed: false,
+      ritualName: 'Voice Analysis',
+      category: 'Analysis',
+      date: 'Jun 20, 2026, 08:45 AM',
+      duration: '6 mins',
+      fatigueLevel: 38,
+      feelings: ['Tension'],
+      notes: 'Mid-week calibration check. Slight tightness in the upper register but resolved after lip trills. Overall solid session.',
+      insight: 'Low resonance detected — try forward placement exercises. Tone is clear with minimal breathiness. Moderate load; ensure hydration and short periodic breaks.',
+      pitchHz: 142,
+      pitchRangeHz: 52,
+      resonanceScore: 55,
+      clarityPct: 76,
+    },
+    {
+      id: '4',
+      ritualName: 'Voice Analysis',
+      category: 'Analysis',
+      date: 'Jun 19, 2026, 01:00 PM',
+      duration: '5 mins',
+      fatigueLevel: 15,
+      feelings: [],
+      notes: 'Standard midday check-in. Voice feels supple and well-hydrated.',
+      insight: 'Strong resonance and clear tone. Low strain — healthy vocal tract biomechanics. Tissue state indicates minimal tension. Ideal conditions for performance.',
+      pitchHz: 145,
+      pitchRangeHz: 71,
+      resonanceScore: 84,
+      clarityPct: 89,
+    },
+    {
+      id: '5',
+      ritualName: 'Voice Analysis',
+      category: 'Analysis',
+      date: 'Jun 18, 2026, 09:00 AM',
+      duration: '10 mins',
+      fatigueLevel: 29,
+      feelings: ['Hoarseness'],
+      notes: 'Focused on chest-voice anchoring. Register transitions felt smooth today. Good clarity across all dynamic ranges.',
+      insight: 'Analysis shows strong resonance, clear tone. Pitch range is moderate — consider expanding upper register exercises for greater flexibility.',
+      pitchHz: 136,
+      pitchRangeHz: 58,
+      resonanceScore: 72,
+      clarityPct: 80,
     },
   ]);
 
-  const handleToggleTodo = (id: string) => {
-    setTodos(prev =>
-      prev.map(todo => (todo.id === id ? { ...todo, completed: !todo.completed } : todo))
-    );
+  const handleAddReport = (report: Omit<VocalReport, 'id'>) => {
+    setReports(prev => [{ ...report, id: crypto.randomUUID() }, ...prev]);
   };
+
+  const handleDeleteReport = (id: string) => {
+    setReports(prev => prev.filter(r => r.id !== id));
+  };
+
+  const [completedRitualIds, setCompletedRitualIds] = useState<string[]>(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      const raw = localStorage.getItem('vocalii_daily_progress');
+      const saved = raw ? JSON.parse(raw) : null;
+      return saved?.date === today ? saved.completedIds : [];
+    } catch { return []; }
+  });
+
+  const handleCompleteRitual = (ritualId: string) => {
+    setCompletedRitualIds(prev => {
+      if (prev.includes(ritualId)) return prev;
+      const updated = [...prev, ritualId];
+      const today = new Date().toISOString().slice(0, 10);
+      localStorage.setItem('vocalii_daily_progress', JSON.stringify({ date: today, completedIds: updated }));
+      return updated;
+    });
+  };
+
+  const handleRestartRoutine = () => {
+    setCompletedRitualIds([]);
+    localStorage.removeItem('vocalii_daily_progress');
+  };
+
+  const [checkInDone, setCheckInDone] = useState<boolean>(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      const raw = localStorage.getItem('vocalii_daily_checkin');
+      const saved = raw ? JSON.parse(raw) : null;
+      return saved?.date === today;
+    } catch { return false; }
+  });
+
+  const handleCompleteCheckIn = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    localStorage.setItem('vocalii_daily_checkin', JSON.stringify({ date: today }));
+    setCheckInDone(true);
+  };
+
+  const dailyRituals = DAILY_RITUAL_IDS
+    .map(id => EXERCISE_RITUALS.find(r => r.id === id))
+    .filter(Boolean) as Ritual[];
 
   // Destination and active state trackers
   const [activeDestination, setActiveDestination] = useState<Destination>(DESTINATIONS[0]);
@@ -175,6 +296,10 @@ export default function App() {
 
   const isCurrentDestinationFavorited = favoritesList.includes(activeDestination.id);
 
+  if (!onboardingDone) {
+    return <OnboardingFlow onComplete={handleOnboardingComplete} />;
+  }
+
   return (
     <div 
       className="min-h-screen bg-[#0d0e11] text-zinc-100 transition-all duration-[800ms] pb-16 relative overflow-hidden"
@@ -234,14 +359,27 @@ export default function App() {
         setCurrentView={setCurrentView}
       />
 
+      {currentView === 'weekly-report' && (
+        <WeeklyReportPage onBack={() => setCurrentView('reports')} />
+      )}
+
       {/* Main Container */}
-      <div className="pt-[88px] max-w-7xl mx-auto transition-all duration-300 px-6 md:px-12 flex flex-col gap-6">
+      <div className={`pt-[88px] max-w-7xl mx-auto transition-all duration-300 px-6 md:px-12 flex flex-col gap-6 ${currentView === 'weekly-report' ? 'hidden' : ''}`}>
 
         {currentView === 'rituals' ? (
           <RitualsPage
-            primaryAccent={currentTheme.color}
-            todos={todos}
-            onToggleTodo={handleToggleTodo}
+            dailyRitualIds={DAILY_RITUAL_IDS}
+            completedRitualIds={completedRitualIds}
+            onCompleteRitual={handleCompleteRitual}
+            onRestartRoutine={handleRestartRoutine}
+            checkInDone={checkInDone}
+            onCompleteCheckIn={handleCompleteCheckIn}
+          />
+        ) : currentView === 'reports' ? (
+          <ReportsPage
+            reports={reports}
+            onAddReport={handleAddReport}
+            onDeleteReport={handleDeleteReport}
           />
         ) : (
           /* Main Grid Module: Left 8 Columns with Hero & Stats, Right 4 Columns with To-Do Assistant */
@@ -257,28 +395,27 @@ export default function App() {
                 setActiveSubTab={setActiveSubTab}
                 isFavorited={isCurrentDestinationFavorited}
                 onToggleFavorite={handleToggleFavorite}
+                onNavigateWeeklyReport={() => setCurrentView('weekly-report')}
               />
 
               {/* Performance Statistics Section */}
               <div className="flex flex-col gap-4">
                 <h3 className="text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-400 px-1">Performance Statistics</h3>
-                
+
                 {/* Vocal fatigue index above the sub-widgets */}
-                <div className="h-[210px]">
-                  <InteractiveMap
-                    destination={activeDestination}
-                    activeAttraction={activeAttraction}
-                    setActiveAttraction={setActiveAttraction}
-                  />
-                </div>
+                <InteractiveMap
+                  destination={activeDestination}
+                  activeAttraction={activeAttraction}
+                  setActiveAttraction={setActiveAttraction}
+                />
 
                 {/* Sub-widgets grid (2 columns per row) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <WeatherWidget destination={activeDestination} />
                   <PriceWidget destination={activeDestination} />
-                  <BusyWidget destination={activeDestination} />
-                  <AcousticWidget destination={activeDestination} />
                 </div>
+
+                <DashboardConsistencyChart />
               </div>
 
             </div>
@@ -287,11 +424,41 @@ export default function App() {
             <div className="lg:col-span-4 flex flex-col gap-6 lg:pt-[12px]">
               
               <div className="flex flex-col gap-2.5">
-                <h3 className="text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-400 px-1 pt-1">Your To Dos</h3>
+                <h3 className="text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-400 px-1 pt-1">Your Habits</h3>
                 <div className="h-auto">
-                  <AssistantCard todos={todos} onToggleTodo={handleToggleTodo} />
+                  <AssistantCard />
                 </div>
               </div>
+
+              {/* Weekly Report card */}
+              <button
+                onClick={() => setCurrentView('weekly-report')}
+                className="w-full text-left group cursor-pointer"
+              >
+                <div
+                  className="relative overflow-hidden rounded-[24px] px-5 py-4 border transition-all duration-300 group-hover:border-[#17A9C9]/40"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(23,169,201,0.07) 0%, rgba(23,169,201,0.02) 100%)',
+                    borderColor: 'rgba(33,232,255,0.15)',
+                    boxShadow: '0 0 28px rgba(23,169,201,0.05)',
+                  }}
+                >
+                  <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#21e8ff]/15 to-transparent" />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[9px] font-mono uppercase tracking-widest text-[#21e8ff]/60 mb-1">Jun 23 – Jun 29</p>
+                      <h4 className="text-[13px] font-medium text-zinc-200 group-hover:text-white transition-colors duration-200">Weekly Report</h4>
+                      <p className="text-[10px] text-zinc-500 mt-0.5">6/7 check-ins · 19/21 rituals</p>
+                    </div>
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-200 group-hover:scale-105"
+                      style={{ background: 'rgba(33,232,255,0.1)', border: '1px solid rgba(33,232,255,0.2)' }}
+                    >
+                      <ArrowRight className="w-4 h-4 text-[#21e8ff]" />
+                    </div>
+                  </div>
+                </div>
+              </button>
 
               <div className="flex flex-col gap-2.5">
                 <h3 className="text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-400 px-1">Upcoming Events</h3>

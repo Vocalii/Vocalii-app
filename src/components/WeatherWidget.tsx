@@ -60,7 +60,7 @@ export default function WeatherWidget({ destination }: WeatherWidgetProps) {
       {/* Header Row: Title without icon */}
       <div className="flex items-center z-10 pl-0.5 pt-0.5">
         <span className="text-sm font-medium tracking-tight text-neutral-300 font-sans">
-          Throat Clearing
+          OMNI-Vocal Effort Score
         </span>
       </div>
 
@@ -108,28 +108,19 @@ export default function WeatherWidget({ destination }: WeatherWidgetProps) {
             </defs>
           </svg>
 
-          {/* Core readout metrics: 52% with superscript styling exact like the image */}
-          <div className="absolute inset-x-0 bottom-0 flex flex-col items-center justify-end h-full pb-0.5">
-            <div className="flex items-start justify-center relative translate-y-3.5 select-none">
-              <span className="text-[32px] font-bold text-white tracking-tighter leading-none select-none font-sans">
-                {likelihood}
+          {/* Core readout metrics */}
+          <div className="absolute inset-x-0 bottom-0 flex flex-col items-center justify-end h-full">
+            <div className="flex items-end justify-center gap-0.5 pb-1">
+              <span className="text-[28px] font-light text-white tracking-tighter leading-none select-none font-sans">
+                {Math.round(likelihood / 10)}
               </span>
-              <span className="text-[9px] font-semibold text-zinc-400 -mt-0.5 select-none font-sans">
-                %
+              <span className="text-[9px] font-semibold text-zinc-400 mb-1 select-none font-sans">
+                /10
               </span>
             </div>
           </div>
         </div>
 
-        {/* Change Rate readout: e.g. +1.66 in 1W */}
-        <div className="text-[11px] mt-2 flex items-center justify-center gap-1 font-sans">
-          <span className="text-[#10b981] font-semibold tracking-tight">
-            {change}
-          </span>
-          <span className="text-zinc-500 font-medium">
-            in {period}
-          </span>
-        </div>
       </div>
     </div>
   );

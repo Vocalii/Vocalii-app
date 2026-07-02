@@ -12,6 +12,11 @@
   --color-accent-muted: var(--primary-accent-muted);
 }
 
+@keyframes float-title {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 5px;
@@ -39,4 +44,54 @@
 
 .animate-pulse-soft {
   animation: pulse-soft 3s infinite ease-in-out;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+/* Range slider — used in onboarding baseline screen */
+.vocalii-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 24px;
+}
+
+.vocalii-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #21e8ff;
+  box-shadow: 0 0 10px rgba(33, 232, 255, 0.5);
+  cursor: pointer;
+  margin-top: -7px;
+}
+
+.vocalii-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: #21e8ff;
+  box-shadow: 0 0 10px rgba(33, 232, 255, 0.5);
+  cursor: pointer;
+}
+
+.vocalii-slider::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 4px;
+}
+
+.vocalii-slider::-moz-range-track {
+  background: transparent;
+  height: 4px;
 }
