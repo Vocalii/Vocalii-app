@@ -13,6 +13,8 @@ interface VocalMetrics {
   pitchRangeHz: number;
   resonanceScore: number;
   clarityPct: number;
+  loudnessDb: number;
+  stabilityPct: number;
   fatigueEstimate: 'Low' | 'Moderate' | 'High';
   fatigueLevel: number;
 }
@@ -109,6 +111,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   const pitchReadings = useRef<number[]>([]);
   const lastPitchTime = useRef<number>(0);
   const fftSnapshotRef = useRef<Float32Array | null>(null);
+  const timeDomainSnapshotRef = useRef<Float32Array | null>(null);
 
   const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
@@ -179,6 +182,10 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
         const freqData = new Float32Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getFloatFrequencyData(freqData);
         fftSnapshotRef.current = freqData;
+
+        const tdData = new Float32Array(analyserRef.current.fftSize);
+        analyserRef.current.getFloatTimeDomainData(tdData);
+        timeDomainSnapshotRef.current = tdData;
       }
       stopRecording();
       setRecordingState('done');
@@ -193,6 +200,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     setBarHeights(new Array(28).fill(0.08));
     pitchReadings.current = [];
     fftSnapshotRef.current = null;
+    timeDomainSnapshotRef.current = null;
   };
 
   const computeMetrics = useCallback((): VocalMetrics => {
@@ -232,7 +240,19 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     const fatigueEstimate: 'Low' | 'Moderate' | 'High' = jitter < 0.04 ? 'Low' : jitter < 0.10 ? 'Moderate' : 'High';
     const fatigueLevel = fatigueEstimate === 'Low' ? 20 : fatigueEstimate === 'Moderate' ? 55 : 80;
 
-    return { pitchHz, pitchRangeHz, resonanceScore, clarityPct, fatigueEstimate, fatigueLevel };
+    let loudnessDb = -60;
+    if (timeDomainSnapshotRef.current) {
+      let rmsSum = 0;
+      for (let i = 0; i < timeDomainSnapshotRef.current.length; i++) {
+        rmsSum += timeDomainSnapshotRef.current[i] ** 2;
+      }
+      const rms = Math.sqrt(rmsSum / timeDomainSnapshotRef.current.length);
+      loudnessDb = rms > 0.0001 ? Math.max(-60, Math.round(20 * Math.log10(rms))) : -60;
+    }
+
+    const stabilityPct = Math.round(Math.max(0, Math.min(100, (1 - jitter / 0.12) * 100)));
+
+    return { pitchHz, pitchRangeHz, resonanceScore, clarityPct, loudnessDb, stabilityPct, fatigueEstimate, fatigueLevel };
   }, []);
 
   const handleAnalyze = () => {
@@ -262,6 +282,8 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
       pitchRangeHz: metrics.pitchRangeHz,
       resonanceScore: metrics.resonanceScore,
       clarityPct: metrics.clarityPct,
+      loudnessDb: metrics.loudnessDb,
+      stabilityPct: metrics.stabilityPct,
     });
     onBack();
   };
@@ -590,6 +612,16 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
                 label="Energy" accent={fatigueColor(metrics.fatigueEstimate)}
                 pulse
                 tooltip="Estimated from pitch jitter. Low jitter means your pitch held steady — less vocal strain."
+              />
+              <CircleMetric
+                value={`${metrics.loudnessDb}`} unit="dB" sub="RMS level"
+                label="Loudness" accent="#f97316"
+                tooltip="RMS loudness of your recording in dBFS. Closer to 0 dB is louder; −60 dB is near-silent."
+              />
+              <CircleMetric
+                value={`${metrics.stabilityPct}`} unit="%" sub="stability"
+                label="Stability" accent="#818cf8"
+                tooltip="Inverse of pitch jitter. 100% means your pitch was rock-solid throughout the recording."
               />
             </div>
 

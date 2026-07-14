@@ -1,23 +1,29 @@
 import { useState } from 'react';
-import { OnboardingData, Role, ExperienceLevel, Goal, HabitPair } from '../../types/onboarding';
+import { OnboardingData, Role, ExperienceLevel, Goal, VoiceBarrier, HabitPair } from '../../types/onboarding';
+import ScreenTerms from './ScreenTerms';
 import AuthScreen from './AuthScreen';
 import ScreenRole from './ScreenRole';
 import ScreenExperience from './ScreenExperience';
 import ScreenGoals from './ScreenGoals';
+import ScreenVoiceBarriers from './ScreenVoiceBarriers';
 import ScreenHabits from './ScreenHabits';
 import ScreenVoiceTraits from './ScreenVoiceTraits';
 import ScreenBaseline from './ScreenBaseline';
 
 interface Props {
   onComplete: (data: OnboardingData) => void;
+  onBypass?: () => void;
+  skipAuth?: boolean;
+  initialData?: { firstName?: string; lastName?: string };
 }
 
-// Step 1 = auth, steps 2–7 = profile (1 of 6 … 6 of 6)
-const PROFILE_STEPS = 6;
+const PROFILE_STEPS = 7; // steps 3–9
 
-export default function OnboardingFlow({ onComplete }: Props) {
-  const [step, setStep] = useState(1);
+export default function OnboardingFlow({ onComplete, onBypass, skipAuth = false, initialData }: Props) {
+  const [step, setStep] = useState(skipAuth ? 3 : 1);
   const [data, setData] = useState<OnboardingData>({
+    firstName: initialData?.firstName || '',
+    lastName: initialData?.lastName || '',
     role: null,
     experienceLevel: null,
     desiredVoiceTraits: [],
@@ -27,20 +33,30 @@ export default function OnboardingFlow({ onComplete }: Props) {
     effortScore: 5,
     confidenceScore: 5,
     symptoms: [],
+    voiceBarrier: null,
     habitPairs: [],
   });
 
   const next = () => setStep(s => s + 1);
   const back = () => setStep(s => s - 1);
-
-  const profileStep = step - 1; // 1-based index within profile screens
-
+  const profileStep = step - 2;
   const finish = () => onComplete(data);
 
   if (step === 1) {
-    return <AuthScreen onLogin={next} onBypass={next} />;
+    return (
+      <AuthScreen
+        onSignUp={(firstName, lastName) => {
+          setData(d => ({ ...d, firstName, lastName }));
+          next();
+        }}
+        onBypass={onBypass ?? next}
+      />
+    );
   }
   if (step === 2) {
+    return <ScreenTerms onNext={next} onBack={back} />;
+  }
+  if (step === 3) {
     return (
       <ScreenRole
         value={data.role}
@@ -52,7 +68,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
       />
     );
   }
-  if (step === 3) {
+  if (step === 4) {
     return (
       <ScreenExperience
         value={data.experienceLevel}
@@ -64,7 +80,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
       />
     );
   }
-  if (step === 4) {
+  if (step === 5) {
     return (
       <ScreenVoiceTraits
         desiredTraits={data.desiredVoiceTraits}
@@ -76,7 +92,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
       />
     );
   }
-  if (step === 5) {
+  if (step === 6) {
     return (
       <ScreenGoals
         value={data.goals}
@@ -88,7 +104,19 @@ export default function OnboardingFlow({ onComplete }: Props) {
       />
     );
   }
-  if (step === 6) {
+  if (step === 7) {
+    return (
+      <ScreenVoiceBarriers
+        value={data.voiceBarrier}
+        onChange={(voiceBarrier: VoiceBarrier) => setData(d => ({ ...d, voiceBarrier }))}
+        onNext={next}
+        onBack={back}
+        step={profileStep}
+        totalSteps={PROFILE_STEPS}
+      />
+    );
+  }
+  if (step === 8) {
     return (
       <ScreenHabits
         value={data.habitPairs}
@@ -104,6 +132,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
     <ScreenBaseline
       onNext={finish}
       onBack={back}
+      onBaseline={(metrics) => setData(d => ({ ...d, baselineMetrics: metrics }))}
       step={profileStep}
       totalSteps={PROFILE_STEPS}
     />

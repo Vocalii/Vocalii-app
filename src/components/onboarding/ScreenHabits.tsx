@@ -12,7 +12,7 @@ interface Props {
   totalSteps: number;
 }
 
-const DAILY_HABITS = [
+export const DAILY_HABITS = [
   { id: 'morning_coffee', label: 'Morning coffee', emoji: '☕' },
   { id: 'brush_teeth', label: 'Brushing teeth', emoji: '🪥' },
   { id: 'morning_shower', label: 'Morning shower', emoji: '🚿' },
@@ -21,7 +21,7 @@ const DAILY_HABITS = [
   { id: 'bedtime_routine', label: 'Bedtime routine', emoji: '🌙' },
 ];
 
-const VOCAL_HABITS = [
+export const VOCAL_HABITS = [
   { id: 'drink_water', label: 'Drink a glass of water', emoji: '💧' },
   { id: 'vocal_hum', label: '2-min vocal hum', emoji: '🎵' },
   { id: 'lip_trill', label: 'Lip trill exercise', emoji: '💋' },

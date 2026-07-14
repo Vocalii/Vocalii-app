@@ -1,5 +1,4 @@
-import React from 'react';
-import { ArrowLeft, ArrowRight, Zap, Shield, Wind, Pencil } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Zap, Shield, Wind, Pencil, LucideIcon } from 'lucide-react';
 import { VoiceIdentity } from '../../types/onboarding';
 
 interface Props {
@@ -13,30 +12,30 @@ interface Props {
   totalSteps: number;
 }
 
-const IDENTITIES: { id: VoiceIdentity; label: string; description: string; icon: React.ReactNode }[] = [
+export const IDENTITIES: { id: VoiceIdentity; label: string; description: string; icon: LucideIcon }[] = [
   {
     id: 'vocal_athlete',
     label: 'Vocal Athlete',
     description: 'Train my voice like a performance instrument — strong, precise, enduring.',
-    icon: <Zap className="w-6 h-6" />,
+    icon: Zap,
   },
   {
     id: 'confident_leader',
     label: 'Confident Leader',
     description: 'Command rooms, inspire teams, and project authority naturally.',
-    icon: <Shield className="w-6 h-6" />,
+    icon: Shield,
   },
   {
     id: 'calm_commanding',
     label: 'Calm Yet Commanding',
     description: 'Communicate with ease, warmth, and quiet authority — without strain.',
-    icon: <Wind className="w-6 h-6" />,
+    icon: Wind,
   },
   {
     id: 'custom',
     label: 'Define my own',
     description: 'I have a specific vision for who I want to become as a communicator.',
-    icon: <Pencil className="w-6 h-6" />,
+    icon: Pencil,
   },
 ];
 
@@ -114,7 +113,7 @@ export default function ScreenIdentity({ value, customIdentity, onChange, onCust
                 style={selected ? SELECTED_STYLE : { borderColor: 'rgba(39,39,42,0.8)' }}
               >
                 <div className={`flex-shrink-0 transition-colors duration-200 ${selected ? 'text-[#21e8ff]' : 'text-zinc-600'}`}>
-                  {identity.icon}
+                  <identity.icon className="w-6 h-6" />
                 </div>
                 <div>
                   <p className={`text-sm font-medium transition-colors duration-200 ${selected ? 'text-white' : 'text-zinc-300'}`}>

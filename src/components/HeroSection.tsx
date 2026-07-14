@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { MapPin, Sparkles, Flame } from 'lucide-react';
 import { Destination } from '../types';
 
@@ -9,10 +9,25 @@ interface HeroSectionProps {
   isFavorited: boolean;
   onToggleFavorite: () => void;
   onNavigateWeeklyReport: () => void;
+  userName?: string;
+  userRole?: string;
 }
+
+const ROLE_LABELS: Record<string, string> = {
+  teacher: 'Teacher',
+  trainer: 'Trainer',
+  speaker: 'Speaker',
+  executive: 'Executive',
+  creator: 'Creator',
+  singer: 'Singer',
+  therapy: 'Voice Therapy',
+  other: 'Vocalist',
+};
 
 export default function HeroSection({
   destination,
+  userName,
+  userRole,
 }: HeroSectionProps) {
   // Let user toggle between high fidelity Call of Duty HUD and beautiful scenic caldera photo!
   const [hudMode, setHudMode] = useState(true);
@@ -34,7 +49,7 @@ export default function HeroSection({
         <div className="flex items-start justify-between z-20">
           <div className="flex flex-col">
             <h2 className="text-white text-xl md:text-2xl font-light tracking-wide font-display leading-none">
-              Welcome back, Gabriella
+              Welcome back, {userName || 'there'}
             </h2>
             <div className="flex items-center gap-1.5 mt-1.5">
               <span className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">
@@ -45,7 +60,7 @@ export default function HeroSection({
 
           <div className="flex items-center gap-2">
             <span className="px-3.5 py-1.5 bg-zinc-900/60 text-[10px] tracking-[0.2em] font-bold uppercase text-zinc-400 border border-zinc-800/80 rounded-full shadow-inner mt-0.5">
-              Vocalist
+              {(userRole && ROLE_LABELS[userRole]) || 'Vocalist'}
             </span>
           </div>
         </div>

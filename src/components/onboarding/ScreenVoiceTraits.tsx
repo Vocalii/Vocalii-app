@@ -12,7 +12,7 @@ interface Props {
 }
 
 // single color per trait for distinct selected states
-const TRAIT_COLORS: Record<string, { primary: string; glow: string; border: string }> = {
+export const TRAIT_COLORS: Record<string, { primary: string; glow: string; border: string }> = {
   Confident: { primary: '#f59e0b', glow: 'rgba(245,158,11,0.22)', border: 'rgba(245,158,11,0.6)' },
   Calm: { primary: '#818cf8', glow: 'rgba(129,140,248,0.22)', border: 'rgba(129,140,248,0.6)' },
   Clear: { primary: '#21e8ff', glow: 'rgba(33,232,255,0.22)', border: 'rgba(33,232,255,0.6)' },
@@ -20,7 +20,7 @@ const TRAIT_COLORS: Record<string, { primary: string; glow: string; border: stri
   Engaging: { primary: '#10b981', glow: 'rgba(16,185,129,0.22)', border: 'rgba(16,185,129,0.6)' },
 };
 
-const TRAITS: { label: string; subtitle: string; emoji: string; glowPos: React.CSSProperties }[] = [
+export const TRAITS: { label: string; subtitle: string; emoji: string; glowPos: React.CSSProperties }[] = [
   { label: 'Confident', subtitle: 'Impactful, powerful, authoritative', emoji: '💪', glowPos: { top: '5%', left: '5%' } },
   { label: 'Calm', subtitle: 'Calm, grounded, relaxed', emoji: '🧘', glowPos: { top: '5%', right: '5%' } },
   { label: 'Clear', subtitle: 'Clear, professional', emoji: '🎯', glowPos: { top: '50%', left: '0%' } },

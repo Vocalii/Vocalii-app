@@ -26,6 +26,20 @@ import {
 } from 'recharts';
 import { EXERCISE_RITUALS } from '../ritualsData';
 import { Ritual } from '../types';
+import { HabitPair } from '../types/onboarding';
+import { VOCAL_HABITS } from './onboarding/ScreenHabits';
+
+const DEFAULT_HABIT_PAIRS: HabitPair[] = [
+  { daily: 'morning_shower', vocal: 'drink_water' },
+  { daily: 'morning_coffee', vocal: 'vocal_hum' },
+  { daily: 'bedtime_routine', vocal: 'silent_rest' },
+];
+
+export interface HabitCheckEntry {
+  daily: string;
+  vocal: string;
+  completed: boolean;
+}
 
 interface RitualsPageProps {
   dailyRitualIds: string[];
@@ -33,10 +47,11 @@ interface RitualsPageProps {
   onCompleteRitual: (id: string) => void;
   onRestartRoutine: () => void;
   checkInDone: boolean;
-  onCompleteCheckIn: () => void;
+  habitPairs: HabitPair[];
+  onCompleteCheckIn: (vocalEffort: number, confidence: number, symptoms: string[], habitChecks: HabitCheckEntry[]) => void;
 }
 
-export default function RitualsPage({ dailyRitualIds, completedRitualIds, onCompleteRitual, onRestartRoutine, checkInDone, onCompleteCheckIn }: RitualsPageProps) {
+export default function RitualsPage({ dailyRitualIds, completedRitualIds, onCompleteRitual, onRestartRoutine, checkInDone, habitPairs, onCompleteCheckIn }: RitualsPageProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedRitual, setSelectedRitual] = useState<Ritual | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,7 +62,7 @@ export default function RitualsPage({ dailyRitualIds, completedRitualIds, onComp
   const [fromRoutine, setFromRoutine] = useState(false);
   const [showRoutineComplete, setShowRoutineComplete] = useState(false);
   const [showCheckInModal, setShowCheckInModal] = useState(false);
-  const [checkInFatigue, setCheckInFatigue] = useState(3);
+  const [checkInConfidence, setCheckInConfidence] = useState(3);
   const [checkInSymptoms, setCheckInSymptoms] = useState<string[]>([]);
   const [checkInNotes, setCheckInNotes] = useState('');
   const [checkInVocalEffort, setCheckInVocalEffort] = useState(5);
@@ -55,16 +70,18 @@ export default function RitualsPage({ dailyRitualIds, completedRitualIds, onComp
   const [checkInStep, setCheckInStep] = useState<1 | 2 | 3>(1);
   const [habitChecks, setHabitChecks] = useState<Record<string, boolean | null>>({});
 
-  const DUMMY_HABITS = [
-    { id: 'hydration', label: 'Stayed hydrated throughout the day', emoji: '💧' },
-    { id: 'sleep', label: 'Got 7+ hours of sleep last night', emoji: '😴' },
-    { id: 'warmup', label: 'Completed a vocal warm-up this morning', emoji: '🎙️' },
-  ];
+  const activeHabitPairs = habitPairs.length > 0 ? habitPairs : DEFAULT_HABIT_PAIRS;
+
+  const CHECK_IN_HABITS = activeHabitPairs.map(pair => ({
+    id: pair.vocal,
+    daily: pair.daily,
+    ...(VOCAL_HABITS.find(v => v.id === pair.vocal) ?? { label: pair.vocal, emoji: '🎙️' }),
+  }));
 
   const closeCheckIn = () => {
     setShowCheckInModal(false);
     setCheckInStep(1);
-    setCheckInFatigue(3);
+    setCheckInConfidence(3);
     setCheckInSymptoms([]);
     setCheckInNotes('');
     setCheckInVocalEffort(5);
@@ -75,7 +92,10 @@ export default function RitualsPage({ dailyRitualIds, completedRitualIds, onComp
   const stepSubtitle = checkInStep === 1 ? 'How is your voice feeling today?' : checkInStep === 2 ? 'Anything to note?' : 'Did you complete your habits?';
 
   const handleLogCheckIn = () => {
-    onCompleteCheckIn();
+    const habitCheckEntries: HabitCheckEntry[] = CHECK_IN_HABITS
+      .filter(h => habitChecks[h.id] !== null && habitChecks[h.id] !== undefined)
+      .map(h => ({ daily: h.daily, vocal: h.id, completed: habitChecks[h.id] as boolean }));
+    onCompleteCheckIn(checkInVocalEffort, checkInConfidence, checkInSymptoms, habitCheckEntries);
     closeCheckIn();
   };
 
@@ -192,35 +212,20 @@ export default function RitualsPage({ dailyRitualIds, completedRitualIds, onComp
           <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-[#17A9C9]/10 rounded-full blur-[40px] pointer-events-none group-hover:scale-110 transition-transform duration-700" />
 
           <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
-            <div className="flex items-start gap-4">
-              <div className="w-11.5 h-11.5 rounded-2xl bg-[#17A9C9]/15 border border-[#17A9C9]/40 flex items-center justify-center text-[#21e8ff] flex-shrink-0 shadow-[0_0_15px_rgba(23,169,201,0.2)] mt-0.5">
-                <Sparkles className="w-5 h-5 animate-pulse" />
-              </div>
+            <div className="flex items-start gap-4 pl-2">
               <div className="flex flex-col">
                 <h3 className="text-[13px] font-semibold text-white tracking-wide mb-1 flex items-center flex-wrap gap-2.5">
-                  Daily Voice Prescription Active
+                  Daily Vocal Protocol
                 </h3>
                 <p className="text-[11.5px] text-zinc-400 max-w-2xl leading-relaxed mb-3">
-                  Your larynx requires targeted warm-up calibrations, hydration cycle lubrication, and deep pharyngeal expansion to protect delicate mucosal tissues during physical demand.
+                  Complete your personalized voice exercises and daily check-in to build healthier vocal habits and track your progress.
                 </p>
                 <div className="flex items-center gap-2.5 flex-wrap">
-                  {/* Active/Start Daily Ritual Button */}
-                  <button
-                    onClick={handleStartDailyRituals}
-                    className="relative overflow-hidden group/btn bg-[#131722]/50 hover:bg-[#1b2130]/75 border border-[#17A9C9]/30 hover:border-[#21e8ff]/60 text-[#21e8ff] hover:text-white px-5 py-2.5 text-[10px] font-mono tracking-widest uppercase rounded-xl flex items-center gap-2.5 transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15),inset_0_1px_1px_rgba(255,255,255,0.02)] hover:shadow-[0_0_15px_rgba(33,232,255,0.15)] cursor-pointer w-fit"
-                  >
-                    <div className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/[0.04] to-transparent -skew-x-12 translate-x-[-150%] group-hover/btn:translate-x-[250%] transition-transform duration-[1200ms] ease-in-out" />
-                    <Play className="w-3 h-3 fill-current opacity-80 group-hover/btn:scale-110 transition-transform duration-300" />
-                    <span className="font-semibold tracking-widest text-[#21e8ff] group-hover/btn:text-white transition-colors duration-300">
-                      {completedCount === 0 ? 'Start Daily Rituals' : completedCount === dailyRitualIds.length ? 'Restart Routine' : 'Continue Routine'}
-                    </span>
-                  </button>
-
                   {/* Daily Check-In Button */}
                   {checkInDone ? (
                     <button
                       disabled
-                      className="border border-[#17A9C9]/25 bg-[#17A9C9]/5 px-5 py-2.5 text-[10px] font-mono tracking-widest uppercase rounded-xl flex items-center gap-2 opacity-60 cursor-default w-fit"
+                      className="border border-[#17A9C9]/25 bg-[#17A9C9]/5 px-5 py-2.5 text-[10px] font-lig tracking-widest uppercase rounded-xl flex items-center gap-2 opacity-60 cursor-default w-fit"
                     >
                       <Check className="w-3 h-3 text-[#17A9C9]" />
                       <span className="text-[#17A9C9]">Checked In</span>
@@ -234,6 +239,29 @@ export default function RitualsPage({ dailyRitualIds, completedRitualIds, onComp
                       <span className="text-white transition-colors duration-300">Daily Check-In</span>
                     </button>
                   )}
+
+                  {/* Active/Start Daily Ritual Button */}
+                  <div className="relative group/lock w-fit">
+                    <button
+                      onClick={checkInDone ? handleStartDailyRituals : undefined}
+                      disabled={!checkInDone}
+                      className={`relative overflow-hidden group/btn border px-5 py-2.5 text-[10px] font-mono tracking-widest uppercase rounded-xl flex items-center gap-2.5 transition-all duration-300 w-fit ${checkInDone
+                        ? 'bg-[#131722]/50 hover:bg-[#1b2130]/75 border-[#17A9C9]/30 hover:border-[#21e8ff]/60 cursor-pointer shadow-[0_4px_12px_rgba(0,0,0,0.15),inset_0_1px_1px_rgba(255,255,255,0.02)] hover:shadow-[0_0_15px_rgba(33,232,255,0.15)]'
+                        : 'bg-zinc-900/40 border-zinc-700/60 cursor-not-allowed opacity-60'
+                        }`}
+                    >
+                      {checkInDone && <div className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/[0.04] to-transparent -skew-x-12 translate-x-[-150%] group-hover/btn:translate-x-[250%] transition-transform duration-[1200ms] ease-in-out" />}
+                      <Play className={`w-3 h-3 fill-current opacity-80 ${checkInDone ? 'group-hover/btn:scale-110 transition-transform duration-300' : ''}`} />
+                      <span className={`font-semibold tracking-widest transition-colors duration-300 ${checkInDone ? 'text-[#21e8ff] group-hover/btn:text-white' : 'text-zinc-500'}`}>
+                        {completedCount === 0 ? 'Start Daily Rituals' : completedCount === dailyRitualIds.length ? 'Restart Routine' : 'Continue Routine'}
+                      </span>
+                    </button>
+                    {!checkInDone && (
+                      <div className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1 rounded-lg text-[10px] font-mono text-zinc-300 bg-zinc-900 border border-zinc-700/60 opacity-0 group-hover/lock:opacity-100 transition-opacity duration-150 z-50">
+                        Complete daily check-in to access
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -436,23 +464,23 @@ export default function RitualsPage({ dailyRitualIds, completedRitualIds, onComp
                     {/* Fatigue level */}
                     <div>
                       <div className="flex items-center justify-between mb-3">
-                        <span className="text-[11px] font-light uppercase tracking-[0.18em] text-[#17A9C9]/70">Vocal Fatigue</span>
-                        <span className="text-[11px] font-light text-[#21e8ff]">{checkInFatigue} / 5</span>
+                        <span className="text-[11px] font-light uppercase tracking-[0.18em] text-[#17A9C9]/70">Voice Confidence</span>
+                        <span className="text-[11px] font-light text-[#21e8ff]">{checkInConfidence} / 5</span>
                       </div>
                       <div className="flex gap-2">
                         {[1, 2, 3, 4, 5].map(n => {
-                          const active = checkInFatigue >= n;
+                          const active = checkInConfidence >= n;
                           const t = n / 5;
                           return (
                             <button
                               key={n}
-                              onClick={() => setCheckInFatigue(n)}
+                              onClick={() => setCheckInConfidence(n)}
                               className="flex-1 h-8 rounded-lg transition-all duration-200 cursor-pointer text-[11px] font-mono"
                               style={active ? {
                                 background: `linear-gradient(135deg, rgba(23,169,201,${0.08 + t * 0.32}) 0%, rgba(33,232,255,${0.03 + t * 0.12}) 100%)`,
                                 border: `1px solid rgba(33,232,255,${0.15 + t * 0.48})`,
                                 color: `rgba(33,232,255,${0.45 + t * 0.55})`,
-                                boxShadow: n === checkInFatigue ? `0 0 ${6 + t * 16}px rgba(33,232,255,${t * 0.28})` : 'none',
+                                boxShadow: n === checkInConfidence ? `0 0 ${6 + t * 16}px rgba(33,232,255,${t * 0.28})` : 'none',
                               } : {
                                 background: 'rgba(255,255,255,0.03)',
                                 border: '1px solid rgba(255,255,255,0.07)',
@@ -465,8 +493,8 @@ export default function RitualsPage({ dailyRitualIds, completedRitualIds, onComp
                         })}
                       </div>
                       <div className="flex justify-between mt-1.5">
-                        <span className="text-[9px] text-zinc-600 font-mono">None</span>
-                        <span className="text-[9px] text-zinc-600 font-mono">Severe</span>
+                        <span className="text-[9px] text-zinc-600 font-mono">Low</span>
+                        <span className="text-[9px] text-zinc-600 font-mono">High</span>
                       </div>
                     </div>
 
@@ -587,7 +615,7 @@ export default function RitualsPage({ dailyRitualIds, completedRitualIds, onComp
                     </div>
 
                     <div className="flex flex-col gap-3">
-                      {DUMMY_HABITS.map(habit => {
+                      {CHECK_IN_HABITS.map(habit => {
                         const val = habitChecks[habit.id] ?? null;
                         return (
                           <div

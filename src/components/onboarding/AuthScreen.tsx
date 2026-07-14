@@ -9,65 +9,94 @@ import {
   EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from '../../lib/supabase';
 
-// TODO: replace src with real Vocalii brand imagery
 const CAROUSEL_ITEMS = [
   {
     id: 'vocal1',
-    src: '/src/assets/images/ytvideo.png',
+    src: 'src/assets/images/discovering_their_unique_voice.png',
     title: 'Build Your Voice Identity',
     description: 'Track your vocal health, build lasting habits, and perform at your best — every day.',
   },
   {
     id: 'vocal2',
-    src: '/src/assets/images/ytvideo.png',
+    src: '/src/assets/images/charismatic_vocal_coach.png',
     title: 'AI-Powered Coaching',
     description: 'Personalised coaching tips based on your daily check-ins and goals.',
   },
 ];
 
 interface Props {
-  onLogin: (email: string) => void;
+  onSignUp: (firstName: string, lastName: string) => void;
   onBypass: () => void;
 }
 
-export default function AuthScreen({ onLogin, onBypass }: Props) {
+export default function AuthScreen({ onSignUp, onBypass }: Props) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [carouselIndex, setCarouselIndex] = useState(0);
 
-  const isFormValid = email.includes('@') && password.length >= 6 && (!isSignUp || fullName.trim().length > 0);
+  const isFormValid = email.includes('@') && password.length >= 6 && (!isSignUp || (firstName.trim().length > 0 && lastName.trim().length > 0));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) return;
 
     setIsLoading(true);
     setErrorMsg('');
 
-    // TODO: replace with supabase.auth.signUp / signInWithPassword
-    setTimeout(() => {
+    if (isSignUp) {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) {
+        setErrorMsg(error.message);
+        setIsLoading(false);
+        return;
+      }
+      if (data.user) {
+        // Insert draft profile so firstName/lastName survive a page refresh mid-onboarding
+        await supabase.from('profiles').insert({
+          id: data.user.id,
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          onboarding_complete: false,
+        });
+      }
       setIsLoading(false);
-      setSuccessMsg(isSignUp ? 'Account created successfully!' : 'Access granted. Setting up your workspace...');
-      setTimeout(() => onLogin(email), 1000);
-    }, 1200);
+      setSuccessMsg('Account created! Setting up your profile...');
+      setTimeout(() => onSignUp(firstName.trim(), lastName.trim()), 800);
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setErrorMsg(error.message);
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(false);
+      setSuccessMsg('Welcome back! Loading your dashboard...');
+      // App.tsx onAuthStateChange handles navigation automatically
+    }
   };
 
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     if (!email) {
       setErrorMsg('Please enter your email address first.');
       return;
     }
     setErrorMsg('');
-    // TODO: supabase.auth.resetPasswordForEmail(email)
-    setSuccessMsg('Reset link sent to your email.');
-    setTimeout(() => setSuccessMsg(''), 4000);
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) {
+      setErrorMsg(error.message);
+    } else {
+      setSuccessMsg('Reset link sent to your email.');
+      setTimeout(() => setSuccessMsg(''), 4000);
+    }
   };
 
   const currentArt = CAROUSEL_ITEMS[carouselIndex];
@@ -84,7 +113,6 @@ export default function AuthScreen({ onLogin, onBypass }: Props) {
         <div className="lg:col-span-5 p-8 sm:p-12 lg:py-14 flex flex-col justify-between relative z-10">
 
           <div className="flex items-center justify-between mb-8">
-            {/* Pixel grid logo */}
             <div className="flex flex-col gap-1 w-8 h-8 opacity-90 group cursor-pointer">
               <div className="flex gap-1">
                 <span className="w-2.5 h-2.5 rounded-[3px] bg-[#17A9C9] group-hover:scale-110 transition-transform" />
@@ -140,17 +168,31 @@ export default function AuthScreen({ onLogin, onBypass }: Props) {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {isSignUp && (
-                <div>
-                  <label className="block text-[11px] font-medium text-zinc-400 tracking-wider mb-1.5 ml-0.5">Full Name</label>
-                  <input
-                    type="text"
-                    value={fullName}
-                    onChange={e => setFullName(e.target.value)}
-                    placeholder="Enter your name"
-                    required={isSignUp}
-                    disabled={isLoading}
-                    className="w-full px-4 py-2.5 bg-[#171a22] border border-zinc-700/80 focus:border-[#17A9C9] focus:ring-4 focus:ring-[#17A9C9]/15 rounded-xl text-xs text-white placeholder-zinc-500 transition-all outline-none"
-                  />
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="block text-[11px] font-medium text-zinc-400 tracking-wider mb-1.5 ml-0.5">First Name</label>
+                    <input
+                      type="text"
+                      value={firstName}
+                      onChange={e => setFirstName(e.target.value)}
+                      placeholder="First"
+                      required={isSignUp}
+                      disabled={isLoading}
+                      className="w-full px-4 py-2.5 bg-[#171a22] border border-zinc-700/80 focus:border-[#17A9C9] focus:ring-4 focus:ring-[#17A9C9]/15 rounded-xl text-xs text-white placeholder-zinc-500 transition-all outline-none"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[11px] font-medium text-zinc-400 tracking-wider mb-1.5 ml-0.5">Last Name</label>
+                    <input
+                      type="text"
+                      value={lastName}
+                      onChange={e => setLastName(e.target.value)}
+                      placeholder="Last"
+                      required={isSignUp}
+                      disabled={isLoading}
+                      className="w-full px-4 py-2.5 bg-[#171a22] border border-zinc-700/80 focus:border-[#17A9C9] focus:ring-4 focus:ring-[#17A9C9]/15 rounded-xl text-xs text-white placeholder-zinc-500 transition-all outline-none"
+                    />
+                  </div>
                 </div>
               )}
 
@@ -203,18 +245,19 @@ export default function AuthScreen({ onLogin, onBypass }: Props) {
                   type="submit"
                   disabled={!isFormValid || isLoading}
                   className={`w-full flex items-center justify-center gap-3 py-3 rounded-xl transition-all duration-300 ${!isFormValid || isLoading
-                      ? 'bg-zinc-900/40 border border-zinc-800/80 cursor-not-allowed opacity-80'
-                      : 'bg-gradient-to-r from-[#17A9C9]/25 to-[#17A9C9]/10 hover:from-[#17A9C9]/35 hover:to-[#17A9C9]/15 border border-[#17A9C9]/60 hover:border-[#17A9C9]/80 shadow-[0_0_20px_rgba(23,169,201,0.12)] group cursor-pointer'
+                    ? 'bg-zinc-900/40 border border-zinc-800/80 cursor-not-allowed opacity-80'
+                    : 'bg-gradient-to-r from-[#17A9C9]/25 to-[#17A9C9]/10 hover:from-[#17A9C9]/35 hover:to-[#17A9C9]/15 border border-[#17A9C9]/60 hover:border-[#17A9C9]/80 shadow-[0_0_20px_rgba(23,169,201,0.12)] group cursor-pointer'
                     }`}
                 >
                   {isLoading ? (
                     <div className="flex items-center gap-2">
                       <span className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-                      <span className="text-[12px] font-medium tracking-wide text-cyan-300 uppercase">Verifying...</span>
+                      <span className="text-[12px] font-medium tracking-wide text-cyan-300 uppercase">
+                        {isSignUp ? 'Creating account...' : 'Signing in...'}
+                      </span>
                     </div>
                   ) : (
-                    <span className={`text-[12px] tracking-widest uppercase transition-colors duration-300 ${!isFormValid || isLoading ? 'text-zinc-400 font-light' : 'text-cyan-300 group-hover:text-[#21e8ff] font-medium'
-                      }`}>
+                    <span className={`text-[12px] tracking-widest uppercase transition-colors duration-300 ${!isFormValid || isLoading ? 'text-zinc-400 font-light' : 'text-cyan-300 group-hover:text-[#21e8ff] font-medium'}`}>
                       {isSignUp ? 'Create Account' : 'Sign In'}
                     </span>
                   )}

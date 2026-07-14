@@ -12,7 +12,7 @@ interface Props {
   totalSteps: number;
 }
 
-const GOALS: { id: Goal; label: string; emoji: string; glowPos: React.CSSProperties }[] = [
+export const GOALS: { id: Goal; label: string; emoji: string; glowPos: React.CSSProperties }[] = [
   { id: 'reduce_strain', label: 'Reduce strain', emoji: '🫁', glowPos: { top: '5%', left: '5%' } },
   { id: 'build_endurance', label: 'Build endurance', emoji: '💪', glowPos: { top: '5%', right: '5%' } },
   { id: 'improve_clarity', label: 'Improve clarity', emoji: '🎯', glowPos: { top: '45%', left: '0%' } },

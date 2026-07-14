@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
+import BaselineFlow, { type BaselineMetrics } from './BaselineFlow';
 
 const FEELING_EMOJIS: Record<string, string> = {
   'Hoarseness': '🗣️', 'Dryness': '💧', 'Tension': '😬',
@@ -14,7 +15,15 @@ function noteFromHz(hz: number): string {
   return `${note}${octave}`;
 }
 
-function CircleMetric({ value, unit, sub, label, accent, tooltip }: { value: string; unit: string; sub: string; label: string; accent: string; tooltip?: string }) {
+type MetricDelta = { text: string; positive: boolean };
+
+function formatDelta(current: number, baseline: number | null | undefined, decimals = 0): MetricDelta | null {
+  if (baseline === null || baseline === undefined) return null;
+  const rounded = Number((current - baseline).toFixed(decimals));
+  return { text: rounded > 0 ? `+${rounded}` : rounded < 0 ? `${rounded}` : '±0', positive: rounded >= 0 };
+}
+
+function CircleMetric({ value, unit, sub, label, accent, tooltip, delta }: { value: string; unit: string; sub: string; label: string; accent: string; tooltip?: string; delta?: MetricDelta | null }) {
   return (
     <div className="flex flex-col items-center gap-2.5">
       <motion.div
@@ -41,6 +50,11 @@ function CircleMetric({ value, unit, sub, label, accent, tooltip }: { value: str
         )}
       </motion.div>
       <span className="text-[9px] font-mono text-zinc-500 tracking-widest uppercase">{label}</span>
+      {delta && (
+        <span className="text-[9px] font-mono tabular-nums" style={{ color: delta.positive ? '#34d399' : '#fb7185' }}>
+          {delta.text} vs baseline
+        </span>
+      )}
     </div>
   );
 }
@@ -49,40 +63,111 @@ import {
   Trash2,
   ChevronRight,
   ChevronLeft,
-  BookOpen,
   Download,
   SlidersHorizontal,
   ChevronDown,
   Mic,
-  CheckSquare
+  Star,
+  Pencil,
+  Check,
+  Target,
+  X,
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { VocalReport } from '../types/onboarding';
+
+interface ReportBaseline {
+  pitchHz: number | null;
+  pitchRangeHz: number | null;
+  resonanceScore: number | null;
+  clarityPct: number | null;
+  loudnessDb: number | null;
+  stabilityPct: number | null;
+  setAt: string | null;
+}
 
 interface ReportsPageProps {
   reports: VocalReport[];
   onAddReport: (report: Omit<VocalReport, 'id'>) => void;
   onDeleteReport: (id: string) => void;
+  onRenameReport: (id: string, name: string) => void;
+  onToggleFavourite: (id: string) => void;
+  onSetBaseline: (metrics: BaselineMetrics) => void;
+  baseline: ReportBaseline;
+}
+
+function BaselineModal({ onClose, onSave }: { onClose: () => void; onSave: (metrics: BaselineMetrics) => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(10px)' }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 12 }}
+        transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+        className="relative w-full max-w-sm rounded-[32px] overflow-hidden"
+        style={{
+          background: 'linear-gradient(160deg, #0f1319 0%, #0b0e14 100%)',
+          border: '1px solid rgba(167,139,250,0.2)',
+          boxShadow: '0 24px 80px rgba(0,0,0,0.8), 0 0 60px rgba(124,58,237,0.07)',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-violet-400/40 to-transparent" />
+        <button onClick={onClose} className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center text-zinc-500 hover:text-white hover:bg-white/5 transition-all cursor-pointer z-10">
+          <X className="w-4 h-4" />
+        </button>
+        <BaselineFlow
+          onComplete={(metrics) => { onSave(metrics); onClose(); }}
+        />
+      </motion.div>
+    </div>
+  );
 }
 
 export default function ReportsPage({
   reports,
   onAddReport,
   onDeleteReport,
+  onRenameReport,
+  onToggleFavourite,
+  onSetBaseline,
+  baseline,
 }: ReportsPageProps) {
   const [showAnalyzer, setShowAnalyzer] = useState(false);
-  const [activeReportDetail, setActiveReportDetail] = useState<VocalReport | null>(null);
-  const [sortBy, setSortBy] = useState<'recent' | 'fatigue'>('recent');
+  const [showBaselinePicker, setShowBaselinePicker] = useState(false);
+  const [activeReportId, setActiveReportId] = useState<string | null>(null);
+  const activeReportDetail = activeReportId ? reports.find(r => r.id === activeReportId) ?? null : null;
+  const [sortBy, setSortBy] = useState<'recent' | 'alpha'>('recent');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
-  const [isMultiSelect, setIsMultiSelect] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
+  const [hoveredStarId, setHoveredStarId] = useState<string | null>(null);
+  const [showFavouritesOnly, setShowFavouritesOnly] = useState(false);
 
-  const filteredReports = [...reports].sort((a, b) => {
-    if (sortBy === 'fatigue') {
-      return b.fatigueLevel - a.fatigueLevel;
-    }
-    return new Date(b.date).getTime() - new Date(a.date).getTime();
-  });
+  const toggleFavourite = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleFavourite(id);
+  };
+
+  const filteredReports = [...reports]
+    .filter(r => !showFavouritesOnly || r.favourite === true)
+    .filter(r => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (r.name || '').toLowerCase().includes(q) || r.date.toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      if (sortBy === 'alpha') {
+        return (a.name || '').localeCompare(b.name || '');
+      }
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
 
   const exportToPDF = (report: VocalReport) => {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -321,7 +406,7 @@ export default function ReportsPage({
                   Cancel
                 </button>
                 <button
-                  onClick={() => { onDeleteReport(activeReportDetail.id); setActiveReportDetail(null); setShowDeleteConfirm(false); }}
+                  onClick={() => { onDeleteReport(activeReportDetail.id); setActiveReportId(null); setShowDeleteConfirm(false); }}
                   className="flex-1 py-2.5 rounded-xl text-[11px] font-mono tracking-widest uppercase text-rose-400 hover:text-white hover:bg-rose-500/20 transition-all duration-200 cursor-pointer"
                   style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}
                 >
@@ -333,7 +418,7 @@ export default function ReportsPage({
         )}
         <div className="mb-8 mt-8 flex items-center gap-3">
           <button
-            onClick={() => setActiveReportDetail(null)}
+            onClick={() => setActiveReportId(null)}
             className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer hover:scale-105"
             style={{ background: 'rgba(23,169,201,0.06)', border: '1px solid rgba(33,232,255,0.15)' }}
           >
@@ -344,9 +429,40 @@ export default function ReportsPage({
 
         <div className="flex items-start justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-[28px] font-extralight tracking-wide text-white mb-1.5">
-              Vocal Report {filteredReports.indexOf(activeReportDetail) + 1}
-            </h1>
+            {isEditingName ? (
+              <div className="flex items-center gap-2 mb-1.5">
+                <input
+                  autoFocus
+                  value={editNameValue}
+                  onChange={e => setEditNameValue(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { onRenameReport(activeReportDetail.id, editNameValue.trim() || activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(false); }
+                    if (e.key === 'Escape') setIsEditingName(false);
+                  }}
+                  className="text-[28px] font-extralight tracking-wide text-white bg-transparent border-b border-[#21e8ff]/50 focus:border-[#21e8ff] outline-none w-full"
+                />
+                <button
+                  onClick={() => { onRenameReport(activeReportDetail.id, editNameValue.trim() || activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(false); }}
+                  className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer"
+                  style={{ background: 'rgba(33,232,255,0.1)', border: '1px solid rgba(33,232,255,0.25)' }}
+                >
+                  <Check className="w-3.5 h-3.5 text-[#21e8ff]" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mb-1.5">
+                <h1 className="text-[28px] font-extralight tracking-wide text-white">
+                  {activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`}
+                </h1>
+                <button
+                  onClick={() => { setEditNameValue(activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(true); }}
+                  className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer opacity-40 hover:opacity-100 transition-opacity duration-200"
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                >
+                  <Pencil className="w-3 h-3 text-zinc-400" />
+                </button>
+              </div>
+            )}
             <p className="text-xs text-zinc-500 font-light tracking-wide">
               {activeReportDetail.date} &nbsp;·&nbsp; {activeReportDetail.duration || '2 mins'}
             </p>
@@ -420,103 +536,128 @@ export default function ReportsPage({
           );
         })()}
 
-        {(activeReportDetail.pitchHz || activeReportDetail.resonanceScore !== undefined || activeReportDetail.clarityPct !== undefined) && (
+        {(activeReportDetail.pitchHz || activeReportDetail.resonanceScore !== undefined || activeReportDetail.clarityPct !== undefined
+          || activeReportDetail.stabilityPct !== undefined || activeReportDetail.loudnessDb !== undefined) && (
           <>
-          <div className="flex flex-wrap justify-start gap-5 mb-8 py-2">
-            {activeReportDetail.pitchHz && (
-              <CircleMetric
-                value={`${Math.round(activeReportDetail.pitchHz)}`} unit="Hz"
-                sub={noteFromHz(activeReportDetail.pitchHz)}
-                label="Pitch" accent="#21e8ff"
-                tooltip="The fundamental note your voice naturally sits at, detected via waveform autocorrelation."
-              />
-            )}
-            {activeReportDetail.pitchRangeHz && (
-              <CircleMetric
-                value={`${Math.round(activeReportDetail.pitchRangeHz)}`} unit="Hz"
-                sub={activeReportDetail.pitchRangeHz < 40 ? 'Narrow' : activeReportDetail.pitchRangeHz < 120 ? 'Moderate' : 'Wide'}
-                label="Range" accent="#a78bfa"
-                tooltip="How much your pitch varied. A wider range means more expressive, dynamic delivery."
-              />
-            )}
-            {activeReportDetail.resonanceScore !== undefined && (
-              <CircleMetric
-                value={`${Math.round(activeReportDetail.resonanceScore)}`} unit="" sub="/ 100"
-                label="Resonance" accent="#fbbf24"
-                tooltip="Energy in the 1–4 kHz presence band. Higher = fuller, more projected sound."
-              />
-            )}
-            {activeReportDetail.clarityPct !== undefined && (
-              <CircleMetric
-                value={`${Math.round(activeReportDetail.clarityPct)}`} unit="%" sub="clarity"
-                label="Clarity" accent="#34d399"
-                tooltip="Dominant frequency vs. total spectral noise. Higher = cleaner, more focused tone."
-              />
-            )}
-            {(() => {
-              const f = activeReportDetail.fatigueLevel;
-              const estimate = f <= 33 ? 'Low' : f <= 66 ? 'Moderate' : 'High';
-              const accent = f <= 33 ? '#22d3ee' : f <= 66 ? '#fbbf24' : '#fb7185';
-              return (
+            <div className="flex flex-wrap justify-start gap-5 mb-8 py-2">
+              {activeReportDetail.pitchHz && (
                 <CircleMetric
-                  value={estimate} unit="" sub="fatigue"
-                  label="Energy" accent={accent}
-                  tooltip="Estimated from pitch jitter. Low jitter means your pitch held steady — less vocal strain."
+                  value={`${Math.round(activeReportDetail.pitchHz)}`} unit="Hz"
+                  sub={noteFromHz(activeReportDetail.pitchHz)}
+                  label="Pitch" accent="#21e8ff"
+                  tooltip="The fundamental note your voice naturally sits at, detected via waveform autocorrelation."
+                  delta={formatDelta(activeReportDetail.pitchHz, baseline.pitchHz)}
                 />
-              );
-            })()}
-          </div>
-
-          {activeReportDetail.insight && (
-            <div className="relative flex flex-col gap-3 py-7 px-6 mb-8">
-              <div className="absolute inset-0 rounded-3xl pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(23,169,201,0.1) 0%, rgba(33,232,255,0.04) 55%, transparent 100%)' }} />
-              <p className="text-[9px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.6)' }}>AI Insight</p>
-              <p className="text-[14px] font-light text-zinc-200 leading-relaxed">{activeReportDetail.insight}</p>
+              )}
+              {activeReportDetail.pitchRangeHz && (
+                <CircleMetric
+                  value={`${Math.round(activeReportDetail.pitchRangeHz)}`} unit="Hz"
+                  sub={activeReportDetail.pitchRangeHz < 40 ? 'Narrow' : activeReportDetail.pitchRangeHz < 120 ? 'Moderate' : 'Wide'}
+                  label="Range" accent="#a78bfa"
+                  tooltip="How much your pitch varied. A wider range means more expressive, dynamic delivery."
+                  delta={formatDelta(activeReportDetail.pitchRangeHz, baseline.pitchRangeHz)}
+                />
+              )}
+              {activeReportDetail.resonanceScore !== undefined && (
+                <CircleMetric
+                  value={`${Math.round(activeReportDetail.resonanceScore)}`} unit="" sub="/ 100"
+                  label="Resonance" accent="#fbbf24"
+                  tooltip="Energy in the 1–4 kHz presence band. Higher = fuller, more projected sound."
+                  delta={formatDelta(activeReportDetail.resonanceScore, baseline.resonanceScore)}
+                />
+              )}
+              {activeReportDetail.clarityPct !== undefined && (
+                <CircleMetric
+                  value={`${Math.round(activeReportDetail.clarityPct)}`} unit="%" sub="clarity"
+                  label="Clarity" accent="#34d399"
+                  tooltip="Dominant frequency vs. total spectral noise. Higher = cleaner, more focused tone."
+                  delta={formatDelta(activeReportDetail.clarityPct, baseline.clarityPct)}
+                />
+              )}
+              {activeReportDetail.stabilityPct !== undefined && (
+                <CircleMetric
+                  value={`${Math.round(activeReportDetail.stabilityPct)}`} unit="%" sub="stability"
+                  label="Stability" accent="#22d3ee"
+                  tooltip="How steady your pitch held over the session. Higher = fewer wavers or breaks."
+                  delta={formatDelta(activeReportDetail.stabilityPct, baseline.stabilityPct)}
+                />
+              )}
+              {activeReportDetail.loudnessDb !== undefined && (
+                <CircleMetric
+                  value={`${Math.round(activeReportDetail.loudnessDb)}`} unit="dB" sub="loudness"
+                  label="Loudness" accent="#f472b6"
+                  tooltip="Average volume of the session, measured in decibels."
+                  delta={formatDelta(activeReportDetail.loudnessDb, baseline.loudnessDb)}
+                />
+              )}
+              {(() => {
+                const f = activeReportDetail.fatigueLevel;
+                const estimate = f <= 33 ? 'Low' : f <= 66 ? 'Moderate' : 'High';
+                const accent = f <= 33 ? '#22d3ee' : f <= 66 ? '#fbbf24' : '#fb7185';
+                return (
+                  <CircleMetric
+                    value={estimate} unit="" sub="fatigue"
+                    label="Energy" accent={accent}
+                    tooltip="Estimated from pitch jitter. Low jitter means your pitch held steady — less vocal strain."
+                  />
+                );
+              })()}
             </div>
-          )}
+
+            {activeReportDetail.insight && (
+              <div className="relative flex flex-col gap-3 py-7 px-6 mb-8">
+                <div className="absolute inset-0 rounded-3xl pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(23,169,201,0.1) 0%, rgba(33,232,255,0.04) 55%, transparent 100%)' }} />
+                <p className="text-[9px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.6)' }}>AI Insight</p>
+                <p className="text-[14px] font-light text-zinc-200 leading-relaxed">{activeReportDetail.insight}</p>
+              </div>
+            )}
           </>
         )}
 
         <div className="space-y-6">
-            <div className="space-y-4">
-              <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-500 mb-3 block">How did it feel?</span>
-              {activeReportDetail.feelings.length === 0 ? (
-                <p className="text-zinc-600 text-xs italic font-light">No sensations logged for this session.</p>
-              ) : (
-                <div className="flex flex-wrap gap-4">
-                  {activeReportDetail.feelings.map(f => (
-                    <div key={f} className="flex flex-col items-center gap-2">
-                      <div
-                        className="w-[90px] h-[90px] rounded-full flex items-center justify-center"
-                        style={{
-                          background: 'radial-gradient(circle at 38% 32%, rgba(33,232,255,0.38) 0%, rgba(23,169,201,0.16) 100%)',
-                          border: '1.5px solid rgba(33,232,255,0.65)',
-                          boxShadow: '0 0 24px rgba(33,232,255,0.3), inset 0 0 18px rgba(33,232,255,0.12)',
-                        }}
-                      >
-                        <span className="text-2xl leading-none">{FEELING_EMOJIS[f] ?? '•'}</span>
-                      </div>
-                      <span className="text-[9px] font-mono text-[#21e8ff] tracking-widest">{f}</span>
+          <div className="space-y-4">
+            <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-500 mb-3 block">How did it feel?</span>
+            {activeReportDetail.feelings.length === 0 ? (
+              <p className="text-zinc-600 text-xs italic font-light">No sensations logged for this session.</p>
+            ) : (
+              <div className="flex flex-wrap gap-4">
+                {activeReportDetail.feelings.map(f => (
+                  <div key={f} className="flex flex-col items-center gap-2">
+                    <div
+                      className="w-[90px] h-[90px] rounded-full flex items-center justify-center"
+                      style={{
+                        background: 'radial-gradient(circle at 38% 32%, rgba(33,232,255,0.38) 0%, rgba(23,169,201,0.16) 100%)',
+                        border: '1.5px solid rgba(33,232,255,0.65)',
+                        boxShadow: '0 0 24px rgba(33,232,255,0.3), inset 0 0 18px rgba(33,232,255,0.12)',
+                      }}
+                    >
+                      <span className="text-2xl leading-none">{FEELING_EMOJIS[f] ?? '•'}</span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-500 mb-3 block">Notes</span>
-              <div
-                className="w-full rounded-xl px-4 py-3 text-[12px] font-light text-zinc-300 leading-relaxed min-h-[160px]"
-                style={{
-                  background: 'rgba(23,169,201,0.04)',
-                  border: '1px solid rgba(33,232,255,0.12)',
-                  boxShadow: '0 0 12px rgba(33,232,255,0.04)',
-                }}
-              >
-                {activeReportDetail.notes || <span className="text-zinc-600 italic">No notes logged for this session.</span>}
+                    <span className="text-[9px] font-mono text-[#21e8ff] tracking-widest">{f}</span>
+                  </div>
+                ))}
               </div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-500 mb-3 block">Notes</span>
+            <div
+              className="w-full rounded-xl px-4 py-3 text-[12px] font-light text-zinc-300 leading-relaxed min-h-[160px]"
+              style={{
+                background: 'rgba(23,169,201,0.04)',
+                border: '1px solid rgba(33,232,255,0.12)',
+                boxShadow: '0 0 12px rgba(33,232,255,0.04)',
+              }}
+            >
+              {activeReportDetail.notes || <span className="text-zinc-600 italic">No notes logged for this session.</span>}
             </div>
+          </div>
         </div>
+
+        <p className="text-[12px] text-zinc-700 text-center leading-relaxed mt-12 px-6">
+          Vocalii provides educational, wellness, and performance support. It does not diagnose or treat voice disorders. If you experience persistent hoarseness, pain, voice loss, swallowing difficulty, or other concerning symptoms, consult an ENT, SLP, or medical professional.
+        </p>
       </div>
     );
   }
@@ -536,10 +677,10 @@ export default function ReportsPage({
         <div className="flex flex-col gap-4">
           <div>
             <h2 className="text-3xl font-light tracking-tight text-white mb-2">
-              Vocal Diagnostics & Reporting
+              Analyze Your Voice
             </h2>
             <p className="text-sm text-zinc-400 max-w-xl leading-relaxed">
-              Review dynamic performance check-ins, vocal fatigue scores, and physiological recommendations generated from your clinical warmup rituals.
+              Measure vocal performance, monitor fatigue and recovery, and gain actionable insights to keep your voice performing at its best.
             </p>
           </div>
 
@@ -551,7 +692,7 @@ export default function ReportsPage({
                 className="flex items-center gap-2.5 px-4 py-2.5 bg-[#181b22] hover:bg-[#1d212a] border border-zinc-800/80 hover:border-[#17A9C9]/35 rounded-xl text-zinc-300 hover:text-white text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5 text-[#21e8ff]" />
-                <span>Sort: <strong className="font-semibold text-white">{sortBy === 'recent' ? 'Most Recent' : 'Highest Fatigue'}</strong></span>
+                <span>Sort: <strong className="font-semibold text-white">{sortBy === 'recent' ? 'Most Recent' : 'Alphabetical'}</strong></span>
                 <ChevronDown className={`w-3 h-3 transition-transform duration-300 text-zinc-500 ${isSortDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
 
@@ -559,13 +700,13 @@ export default function ReportsPage({
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsSortDropdownOpen(false)} />
                   <div className="absolute left-0 mt-2 w-48 bg-[#12141a] border border-zinc-800/80 rounded-xl shadow-[0_10px_25px_rgba(0,0,0,0.5)] py-1.5 z-50">
-                    {(['recent', 'fatigue'] as const).map((opt) => (
+                    {(['recent', 'alpha'] as const).map((opt) => (
                       <button
                         key={opt}
                         onClick={() => { setSortBy(opt); setIsSortDropdownOpen(false); }}
                         className={`w-full flex items-center justify-between px-4 py-2.5 text-xs text-left cursor-pointer transition-colors ${sortBy === opt ? 'text-[#21e8ff] bg-[#17A9C9]/10 font-semibold' : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'}`}
                       >
-                        <span>{opt === 'recent' ? 'Most Recent' : 'Highest Fatigue'}</span>
+                        <span>{opt === 'recent' ? 'Most Recent' : 'Alphabetical'}</span>
                         {sortBy === opt && <span className="w-1.5 h-1.5 rounded-full bg-[#21e8ff]" />}
                       </button>
                     ))}
@@ -575,53 +716,102 @@ export default function ReportsPage({
             </div>
 
             <button
-              onClick={() => setIsMultiSelect(!isMultiSelect)}
-              className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none ${isMultiSelect
+              onClick={() => setShowFavouritesOnly(v => !v)}
+              className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none ${showFavouritesOnly
                 ? 'bg-[#17A9C9]/15 border-[#17A9C9]/45 text-[#21e8ff]'
                 : 'bg-[#181b22] hover:bg-[#1d212a] border-zinc-800/80 hover:border-[#17A9C9]/35 text-zinc-300 hover:text-white'
                 }`}
             >
-              <CheckSquare className="w-3.5 h-3.5" />
-              <span>Select</span>
+              <Star className="w-3.5 h-3.5" />
+              <span>Favourites</span>
             </button>
           </div>
         </div>
 
-        {/* Voice Analyzer circle button */}
-        <button
-          onClick={() => setShowAnalyzer(true)}
-          className="group/va relative flex flex-col items-center gap-3 cursor-pointer flex-shrink-0 mt-4"
-        >
-          <div
-            className="relative w-[92px] h-[92px] rounded-full flex items-center justify-center transition-all duration-300 group-hover/va:scale-105"
-            style={{
-              background: 'radial-gradient(circle at 38% 32%, rgba(33,232,255,0.22) 0%, rgba(23,169,201,0.08) 55%, rgba(12,14,18,0.9) 100%)',
-              border: '1.5px solid rgba(33,232,255,0.45)',
-              boxShadow: '0 0 28px rgba(33,232,255,0.18), inset 0 0 20px rgba(33,232,255,0.06)',
-            }}
+        {/* Action buttons */}
+        <div className="flex items-start gap-5 flex-shrink-0 mt-4">
+
+          {/* Set Baseline */}
+          <button
+            onClick={() => setShowBaselinePicker(true)}
+            className="group/sb relative flex flex-col items-center gap-3 cursor-pointer"
           >
             <div
-              className="absolute inset-0 rounded-full animate-ping opacity-20"
-              style={{ border: '1px solid rgba(33,232,255,0.6)', animationDuration: '2.4s' }}
-            />
-            <Mic className="w-7 h-7 text-[#21e8ff] group-hover/va:scale-110 transition-transform duration-300" style={{ filter: 'drop-shadow(0 0 8px rgba(33,232,255,0.6))' }} />
-          </div>
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-[13px] font-light text-[#21e8ff] tracking-wide">New Analysis</span>
-          </div>
-        </button>
+              className="relative w-[92px] h-[92px] rounded-full flex items-center justify-center transition-all duration-300 group-hover/sb:scale-105"
+              style={{
+                background: 'radial-gradient(circle at 38% 32%, rgba(167,139,250,0.18) 0%, rgba(124,58,237,0.06) 55%, rgba(12,14,18,0.9) 100%)',
+                border: '1.5px solid rgba(167,139,250,0.35)',
+                boxShadow: '0 0 28px rgba(167,139,250,0.12), inset 0 0 20px rgba(167,139,250,0.05)',
+              }}
+            >
+              <div
+                className="absolute inset-0 rounded-full animate-ping opacity-15"
+                style={{ border: '1px solid rgba(167,139,250,0.5)', animationDuration: '3s' }}
+              />
+              <Target className="w-7 h-7 text-violet-400 group-hover/sb:scale-110 transition-transform duration-300" style={{ filter: 'drop-shadow(0 0 8px rgba(167,139,250,0.5))' }} />
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-[13px] font-light text-violet-400 tracking-wide">Set Baseline</span>
+              <span className="text-[9px] font-mono text-zinc-600">
+                {baseline.setAt
+                  ? `Last set ${new Date(baseline.setAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                  : 'Never set'}
+              </span>
+            </div>
+          </button>
+
+          {/* Voice Analyzer circle button */}
+          <button
+            onClick={() => setShowAnalyzer(true)}
+            className="group/va relative flex flex-col items-center gap-3 cursor-pointer"
+          >
+            <div
+              className="relative w-[92px] h-[92px] rounded-full flex items-center justify-center transition-all duration-300 group-hover/va:scale-105"
+              style={{
+                background: 'radial-gradient(circle at 38% 32%, rgba(33,232,255,0.22) 0%, rgba(23,169,201,0.08) 55%, rgba(12,14,18,0.9) 100%)',
+                border: '1.5px solid rgba(33,232,255,0.45)',
+                boxShadow: '0 0 28px rgba(33,232,255,0.18), inset 0 0 20px rgba(33,232,255,0.06)',
+              }}
+            >
+              <div
+                className="absolute inset-0 rounded-full animate-ping opacity-20"
+                style={{ border: '1px solid rgba(33,232,255,0.6)', animationDuration: '2.4s' }}
+              />
+              <Mic className="w-7 h-7 text-[#21e8ff] group-hover/va:scale-110 transition-transform duration-300" style={{ filter: 'drop-shadow(0 0 8px rgba(33,232,255,0.6))' }} />
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-[13px] font-light text-[#21e8ff] tracking-wide">Record Analysis</span>
+            </div>
+          </button>
+
+        </div>{/* end action buttons */}
       </div>
+
+      {/* Baseline recording modal */}
+      {showBaselinePicker && <BaselineModal onClose={() => setShowBaselinePicker(false)} onSave={onSetBaseline} />}
 
       <div className="border-b border-zinc-900/40 mb-6" />
 
+      <div className="relative mb-4 flex items-center">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Search reports..."
+          className="w-full py-2.5 pl-4 pr-10 rounded-2xl bg-[#13151c]/70 border border-zinc-800 focus:border-[#17A9C9]/50 focus:outline-none text-xs text-white"
+        />
+        <div className="absolute right-3.5 flex items-center pointer-events-none text-zinc-500">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
+      </div>
+
       {filteredReports.length === 0 ? (
-        <div className="bg-gradient-to-b from-zinc-900/20 to-[#12141a]/90 border border-zinc-800/60 rounded-[30px] p-16 text-center flex flex-col items-center justify-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-zinc-950/40 border border-zinc-800 flex items-center justify-center mb-2">
-            <BookOpen className="w-5 h-5 text-[#21e8ff]/70" />
-          </div>
-          <h3 className="text-sm font-semibold text-zinc-300">No report records found</h3>
-          <p className="text-xs text-zinc-500 max-w-xs">
-            Begin practice routines or complete your status check-ins to build up structured performance analytics here.
+        <div className="flex flex-col items-center justify-center gap-2 py-24">
+          <p className="text-sm font-medium text-zinc-300">No reports found</p>
+          <p className="text-xs font-light text-zinc-500">
+            {searchQuery ? 'No reports match your search.' : 'Record your first voice analysis to get a report.'}
           </p>
         </div>
       ) : (
@@ -630,22 +820,42 @@ export default function ReportsPage({
             return (
               <div
                 key={report.id}
-                onClick={() => setActiveReportDetail(report)}
+                onClick={() => setActiveReportId(report.id)}
                 className="group relative overflow-hidden bg-[#181b22] hover:bg-[#1d212a] border border-zinc-800/80 hover:border-[#17A9C9]/45 rounded-2xl px-6 py-4 transition-all duration-500 cursor-pointer flex items-center justify-between gap-6 shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.35),0_8px_20px_rgba(23,169,201,0.08)] hover:-translate-y-[1px]"
               >
                 <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#21e8ff]/30 to-transparent opacity-40 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
                 <div className="absolute inset-0 w-[50%] h-full bg-gradient-to-r from-transparent via-white/[0.02] to-transparent -skew-x-[20deg] translate-x-[-150%] group-hover:translate-x-[250%] transition-transform duration-[1200ms] ease-out pointer-events-none" />
 
-                <div className="flex-1 min-w-0 flex items-center gap-4 relative z-10">
+                <div className="flex-1 min-w-0 flex items-center gap-3 relative z-10">
+                  <button
+                    onClick={(e) => toggleFavourite(report.id, e)}
+                    onMouseEnter={() => setHoveredStarId(report.id)}
+                    onMouseLeave={() => setHoveredStarId(null)}
+                    className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 cursor-pointer border ${report.favourite === true
+                      ? 'bg-[#21e8ff]/[0.08] border-[#21e8ff]/25'
+                      : 'bg-white/[0.03] border-zinc-700/60 hover:bg-[#21e8ff]/10 hover:border-[#21e8ff]/30'
+                      }`}
+                  >
+                    <Star
+                      className="w-4 h-4 transition-colors duration-200"
+                      style={
+                        report.favourite === true
+                          ? { color: '#21e8ff', fill: '#21e8ff' }
+                          : hoveredStarId === report.id
+                            ? { color: '#21e8ff' }
+                            : { color: '#52525b' }
+                      }
+                    />
+                  </button>
                   <div className="flex flex-col gap-1.5 min-w-0">
                     <h3 className="text-[15px] font-light text-white tracking-wide group-hover:text-[#21e8ff] transition-colors duration-300 truncate">
-                      Vocal Report {index + 1}
+                      {report.name || `Vocal Report ${index + 1}`}
                     </h3>
                     <span className="text-[10.5px] text-zinc-500 font-light tracking-wide">{report.date}</span>
                   </div>
                 </div>
 
-                <div className="flex-shrink-0 relative z-10">
+                <div className="flex items-center gap-2 flex-shrink-0 relative z-10">
                   <div className="w-8 h-8 rounded-full bg-zinc-900/60 group-hover:bg-[#17A9C9]/10 border border-zinc-800/60 group-hover:border-[#21e8ff]/50 flex items-center justify-center text-zinc-500 group-hover:text-[#21e8ff] transition-all duration-300">
                     <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-300" />
                   </div>

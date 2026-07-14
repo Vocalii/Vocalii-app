@@ -2,6 +2,21 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Search, MapPin, Check, Sparkles, Bell, Info, Plus, User, Settings, LogOut } from 'lucide-react';
 import { Destination } from '../types';
 
+export interface AppNotification {
+  id: string;
+  text: string;
+  detail?: string;
+  timestamp: number;
+}
+
+function timeAgo(timestamp: number): string {
+  const diff = Math.floor((Date.now() - timestamp) / 1000);
+  if (diff < 60) return 'Just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
 interface HeaderProps {
   destinations: Destination[];
   activeDestination: Destination;
@@ -14,6 +29,10 @@ interface HeaderProps {
   onOpenFavorites: () => void;
   currentView: 'home' | 'rituals' | 'reports';
   setCurrentView: (view: 'home' | 'rituals' | 'reports') => void;
+  notifications: AppNotification[];
+  onClearNotifications: () => void;
+  onSignOut?: () => void;
+  onOpenProfile?: () => void;
 }
 
 export default function Header({
@@ -28,16 +47,31 @@ export default function Header({
   onOpenFavorites,
   currentView,
   setCurrentView,
+  notifications,
+  onClearNotifications,
+  onSignOut,
+  onOpenProfile,
 }: HeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [notifications, setNotifications] = useState([
-    { id: 1, text: 'Your vocal baseline has been saved', time: '2m ago' },
-    { id: 2, text: 'New coaching tip available for you', time: '18m ago' },
-    { id: 3, text: 'Weekly vocal health report is ready', time: '1h ago' },
-    { id: 4, text: 'Reminder: complete your morning ritual', time: '3h ago' },
-  ]);
+  const [notifsSeenAt, setNotifsSeenAt] = useState(() => {
+    const raw = localStorage.getItem('vocalii_notifications_seen_at');
+    return raw ? Number(raw) : 0;
+  });
+  const hasUnreadNotifs = notifications.some(n => n.timestamp > notifsSeenAt);
+
+  const toggleNotifOpen = () => {
+    setNotifOpen(o => {
+      const next = !o;
+      if (next) {
+        const newest = notifications.reduce((max, n) => Math.max(max, n.timestamp), 0);
+        setNotifsSeenAt(newest);
+        localStorage.setItem('vocalii_notifications_seen_at', String(newest));
+      }
+      return next;
+    });
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [chatQuery, setChatQuery] = useState('');
   const profileRef = useRef<HTMLDivElement>(null);
@@ -156,12 +190,12 @@ export default function Header({
           {/* Notifications */}
           <div className="relative" ref={notifRef}>
             <button
-              onClick={() => setNotifOpen(o => !o)}
+              onClick={toggleNotifOpen}
               className={`w-9 h-9 rounded-full border flex items-center justify-center transition-all duration-200 shadow-sm relative group cursor-pointer ${notifOpen ? 'text-[#21e8ff] bg-[#17A9C9]/20 border-[#17A9C9]/30' : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-[#21e8ff] hover:bg-[#17A9C9]/20 hover:border-[#17A9C9]/30'}`}
               title="Notifications"
             >
               <Bell className="w-4 h-4" />
-              {notifications.length > 0 && (
+              {hasUnreadNotifs && (
                 <>
                   <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-[#21e8ff] rounded-full animate-ping" />
                   <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-[#21e8ff] rounded-full" />
@@ -198,7 +232,10 @@ export default function Header({
                           <div className="w-1.5 h-1.5 rounded-full bg-[#21e8ff] mt-1.5 flex-shrink-0 shadow-[0_0_6px_rgba(33,232,255,0.6)]" />
                           <div className="flex-1 min-w-0">
                             <p className="text-[12px] text-zinc-300 leading-snug">{n.text}</p>
-                            <p className="text-[10px] text-[#21e8ff]/40 mt-0.5">{n.time}</p>
+                            {n.detail && (
+                              <p className="text-[11px] text-zinc-500 leading-snug mt-0.5">{n.detail}</p>
+                            )}
+                            <p className="text-[10px] text-[#21e8ff]/40 mt-0.5">{timeAgo(n.timestamp)}</p>
                           </div>
                         </div>
                       </div>
@@ -208,7 +245,7 @@ export default function Header({
 
                 <div className="px-3 py-2.5 relative z-10" style={{ borderTop: '1px solid rgba(23,169,201,0.12)' }}>
                   <button
-                    onClick={() => { setNotifications([]); setNotifOpen(false); }}
+                    onClick={() => { onClearNotifications(); setNotifOpen(false); }}
                     className="w-full py-2 rounded-xl text-[11px] text-[#21e8ff]/50 hover:text-[#21e8ff] hover:bg-[#17A9C9]/10 transition-all duration-150 cursor-pointer tracking-wide border border-transparent hover:border-[#17A9C9]/20"
                   >
                     Clear all
@@ -242,7 +279,10 @@ export default function Header({
                 {/* top sheen line */}
                 <div className="absolute top-0 left-4 right-4 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
-                <button className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-zinc-300 hover:text-white hover:bg-white/5 transition-colors duration-150 cursor-pointer">
+                <button
+                  onClick={() => { setProfileOpen(false); onOpenProfile?.(); }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-zinc-300 hover:text-white hover:bg-white/5 transition-colors duration-150 cursor-pointer"
+                >
                   <User className="w-3 h-3 text-zinc-500" />
                   Profile
                 </button>
@@ -251,7 +291,10 @@ export default function Header({
                   Settings
                 </button>
                 <div className="h-px mx-2.5 my-0.5" style={{ background: 'rgba(255,255,255,0.06)' }} />
-                <button className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors duration-150 cursor-pointer">
+                <button
+                  onClick={() => { setProfileOpen(false); onSignOut?.(); }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors duration-150 cursor-pointer"
+                >
                   <LogOut className="w-3 h-3" />
                   Log out
                 </button>

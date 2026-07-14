@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AreaChart,
   Area,
@@ -9,22 +9,23 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { Check } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
-const DATA = [
-  { name: 'Mon', completed: 1, date: 'Jun 23' },
-  { name: 'Tue', completed: 2, date: 'Jun 24' },
-  { name: 'Wed', completed: 1, date: 'Jun 25' },
-  { name: 'Thu', completed: 3, date: 'Jun 26' },
-  { name: 'Fri', completed: 0, date: 'Jun 27' },
-  { name: 'Sat', completed: 2, date: 'Jun 28' },
-  { name: 'Today', completed: 2, date: 'Jun 29' },
-];
+interface DayData {
+  name: string;
+  date: string;
+  dateStr: string;
+  completed: number;
+}
 
-const total = DATA.reduce((sum, d) => sum + d.completed, 0);
+interface Props {
+  userId: string | null;
+  dailyRitualIds: string[];
+}
 
 interface TooltipProps {
   active?: boolean;
-  payload?: Array<{ payload: { name: string; completed: number; date: string } }>;
+  payload?: Array<{ payload: DayData }>;
   label?: string;
 }
 
@@ -44,7 +45,59 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
   return null;
 };
 
-export default function DashboardConsistencyChart() {
+function buildWeekTemplate(): DayData[] {
+  const days: DayData[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push({
+      dateStr: d.toISOString().slice(0, 10),
+      name: i === 0 ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'short' }),
+      date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      completed: 0,
+    });
+  }
+  return days;
+}
+
+export default function DashboardConsistencyChart({ userId, dailyRitualIds }: Props) {
+  const [data, setData] = useState<DayData[]>(buildWeekTemplate);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!userId) {
+      setData(buildWeekTemplate());
+      setLoading(false);
+      return;
+    }
+
+    const week = buildWeekTemplate();
+    const oldest = week[0].dateStr;
+
+    supabase
+      .from('ritual_completions')
+      .select('date, ritual_id')
+      .eq('user_id', userId)
+      .gte('date', oldest)
+      .then(({ data: rows }) => {
+        if (rows) {
+          const countsByDate: Record<string, number> = {};
+          for (const row of rows) {
+            countsByDate[row.date] = (countsByDate[row.date] ?? 0) + 1;
+          }
+          setData(week.map(day => ({
+            ...day,
+            completed: countsByDate[day.dateStr] ?? 0,
+          })));
+        }
+        setLoading(false);
+      });
+  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const total = data.reduce((sum, d) => sum + d.completed, 0);
+  const maxPossible = 7 * Math.max(dailyRitualIds.length, 1);
+  const habitHealth = Math.round((total / maxPossible) * 100);
+
   return (
     <div className="bg-[#181b22]/90 backdrop-blur-[12px] border border-zinc-800/80 rounded-[28px] p-5 hover:bg-[#1d212a]/95 hover:border-zinc-700/60 transition-all duration-300 shadow-sm relative overflow-hidden flex flex-col gap-4 group">
       <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-[#17A9C9]/35 to-transparent" />
@@ -58,28 +111,34 @@ export default function DashboardConsistencyChart() {
       </div>
 
       <div className="h-36 w-full z-10">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={DATA} margin={{ top: 6, right: 8, left: -25, bottom: 0 }}>
-            <defs>
-              <linearGradient id="dashColorCompletions" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#17A9C9" stopOpacity={0.25} />
-                <stop offset="95%" stopColor="#17A9C9" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1b1e2a" />
-            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 10, fontFamily: 'monospace' }} />
-            <YAxis axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 10, fontFamily: 'monospace' }} allowDecimals={false} />
-            <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#1c343d', strokeWidth: 1 }} />
-            <Area type="monotone" dataKey="completed" stroke="#21e8ff" strokeWidth={2} fillOpacity={1} fill="url(#dashColorCompletions)" />
-          </AreaChart>
-        </ResponsiveContainer>
+        {loading ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="w-5 h-5 border-2 border-[#17A9C9] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 6, right: 8, left: -25, bottom: 0 }}>
+              <defs>
+                <linearGradient id="dashColorCompletions" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#17A9C9" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#17A9C9" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1b1e2a" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 10, fontFamily: 'monospace' }} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 10, fontFamily: 'monospace' }} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#1c343d', strokeWidth: 1 }} />
+              <Area type="monotone" dataKey="completed" stroke="#21e8ff" strokeWidth={2} fillOpacity={1} fill="url(#dashColorCompletions)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       <div className="border-t border-zinc-800/60 pt-3.5 grid grid-cols-3 gap-3 text-center z-10">
         {[
-          { label: 'Average Pace', value: `${(total / 7).toFixed(1)}`, unit: '/ day' },
+          { label: 'Average Pace', value: (total / 7).toFixed(1), unit: '/ day' },
           { label: 'Total Complete', value: `${total}`, unit: 'tasks' },
-          { label: 'Habit Health', value: `${Math.round((total / 21) * 100)}%`, unit: '', accent: true },
+          { label: 'Habit Health', value: `${habitHealth}%`, unit: '', accent: true },
         ].map(s => (
           <div key={s.label} className="bg-gradient-to-br from-[#101217] to-[#0d0e13]/90 border border-zinc-800/60 rounded-2xl p-2.5 shadow-inner hover:border-zinc-700/60 transition-colors duration-300">
             <span className="block text-[8.5px] font-mono uppercase tracking-wider text-zinc-500">{s.label}</span>

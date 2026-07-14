@@ -11,24 +11,27 @@ interface Props {
   totalSteps: number;
 }
 
-const LEVELS: { id: ExperienceLevel; label: string; description: string; icon: React.ReactNode }[] = [
+export const LEVELS: { id: ExperienceLevel; label: string; description: string; icon: React.ReactNode; image: string }[] = [
   {
     id: 'beginner',
     label: 'New to Voice Care',
     description: "I have little or no experience with vocal exercises or voice training.",
     icon: <Sprout className="w-6 h-6" />,
+    image: '/src/assets/images/new.png',
   },
   {
     id: 'some_experience',
     label: 'Some Voice Awareness',
     description: "I’ve tried voice exercises, read about voice care, or noticed patterns in my voice.",
     icon: <Flame className="w-6 h-6" />,
+    image: '/src/assets/images/medium.png',
   },
   {
     id: 'trained',
     label: "Experienced / Trained Voice User",
     description: "I’ve worked with an SLP, voice coach, singing teacher, or completed formal voice training.",
     icon: <Star className="w-6 h-6" />,
+    image: '/src/assets/images/expert.png',
   },
 ];
 
@@ -142,7 +145,7 @@ export default function ScreenExperience({ value, onChange, onNext, onBack, step
       {/* RIGHT PANEL */}
       <div className="hidden lg:block lg:w-[32%] relative overflow-hidden">
         <img
-          src="/src/assets/images/cod_ghost_operator_1780463136031.png"
+          src={LEVELS.filter(l => l.id === value)?.[0]?.image}
           alt="placeholder"
           className="absolute inset-0 w-full h-full object-cover"
         />

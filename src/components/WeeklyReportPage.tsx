@@ -1,12 +1,17 @@
 import { useState } from 'react';
 import { ArrowLeft, ArrowRight, ChevronLeft, Download, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { GOALS } from './onboarding/ScreenGoals';
+import { TRAITS, TRAIT_COLORS } from './onboarding/ScreenVoiceTraits';
+import { DAILY_HABITS, VOCAL_HABITS } from './onboarding/ScreenHabits';
+import { Goal, HabitPair } from '../types/onboarding';
 
 interface DayData {
   date: string;          // 'Mon', 'Tue', etc.
   fullDate: string;      // 'Jun 30'
   checkInDone: boolean;
-  vocaEffort: number | null;   // 0–10
+  vocaEffort: number | null;      // 0–10
+  vocalConfidence: number | null; // 0–10
   ritualsCompleted: number;
   totalRituals: number;
   symptoms: string[];
@@ -19,81 +24,84 @@ interface DayData {
 
 const WEEK_DATA: DayData[] = [
   {
-    date: 'Mon', fullDate: 'Jun 23', checkInDone: true, vocaEffort: 3, ritualsCompleted: 3, totalRituals: 3,
+    date: 'Mon', fullDate: 'Jun 23', checkInDone: true, vocaEffort: 3, vocalConfidence: 8, ritualsCompleted: 3, totalRituals: 3,
     symptoms: [], supportArea: 'Breath & Fatigue',
     notes: 'Great morning — voice felt clear and resonant. Humming exercises went smoothly.',
     pitchHz: 138, resonanceScore: 78, clarityPct: 82,
   },
   {
-    date: 'Tue', fullDate: 'Jun 24', checkInDone: true, vocaEffort: 6, ritualsCompleted: 2, totalRituals: 3,
+    date: 'Tue', fullDate: 'Jun 24', checkInDone: true, vocaEffort: 6, vocalConfidence: 4, ritualsCompleted: 2, totalRituals: 3,
     symptoms: ['Tension', 'Dryness', 'Fatigue'], supportArea: 'Body Tension',
     notes: 'Two hours of back-to-back presentations. Voice felt strained by the afternoon.',
     pitchHz: 124, resonanceScore: 54, clarityPct: 61,
   },
   {
-    date: 'Wed', fullDate: 'Jun 25', checkInDone: true, vocaEffort: 4, ritualsCompleted: 3, totalRituals: 3,
+    date: 'Wed', fullDate: 'Jun 25', checkInDone: true, vocaEffort: 4, vocalConfidence: 6, ritualsCompleted: 3, totalRituals: 3,
     symptoms: ['Dryness'], supportArea: null,
     notes: 'Mid-week calibration. Slight dryness resolved after warm fluids.',
     pitchHz: 142, resonanceScore: 67, clarityPct: 74,
   },
   {
-    date: 'Thu', fullDate: 'Jun 26', checkInDone: false, vocaEffort: null, ritualsCompleted: 1, totalRituals: 3,
+    date: 'Thu', fullDate: 'Jun 26', checkInDone: false, vocaEffort: null, vocalConfidence: null, ritualsCompleted: 1, totalRituals: 3,
     symptoms: [], supportArea: null,
     notes: '',
     pitchHz: undefined, resonanceScore: undefined, clarityPct: undefined,
   },
   {
-    date: 'Fri', fullDate: 'Jun 27', checkInDone: true, vocaEffort: 2, ritualsCompleted: 3, totalRituals: 3,
+    date: 'Fri', fullDate: 'Jun 27', checkInDone: true, vocaEffort: 2, vocalConfidence: 9, ritualsCompleted: 3, totalRituals: 3,
     symptoms: [], supportArea: 'Confidence',
     notes: 'Best session of the week — voice felt powerful and grounded.',
     pitchHz: 145, resonanceScore: 84, clarityPct: 89,
   },
   {
-    date: 'Sat', fullDate: 'Jun 28', checkInDone: true, vocaEffort: 5, ritualsCompleted: 2, totalRituals: 3,
+    date: 'Sat', fullDate: 'Jun 28', checkInDone: true, vocaEffort: 5, vocalConfidence: 5, ritualsCompleted: 2, totalRituals: 3,
     symptoms: ['Fatigue'], supportArea: 'Recovery',
     notes: 'Weekend rest day. Some fatigue from the week. Focused on recovery.',
     pitchHz: 130, resonanceScore: 60, clarityPct: 68,
   },
   {
-    date: 'Sun', fullDate: 'Jun 29', checkInDone: true, vocaEffort: 3, ritualsCompleted: 3, totalRituals: 3,
+    date: 'Sun', fullDate: 'Jun 29', checkInDone: true, vocaEffort: 3, vocalConfidence: 7, ritualsCompleted: 3, totalRituals: 3,
     symptoms: [], supportArea: null,
     notes: 'Good end to the week. Voice feels ready for the week ahead.',
     pitchHz: 140, resonanceScore: 76, clarityPct: 80,
   },
 ];
 
-interface HabitData {
-  dailyLabel: string;
-  dailyEmoji: string;
-  vocalLabel: string;
-  vocalEmoji: string;
-  // true = done each day (Mon–Sun)
-  days: boolean[];
+interface HabitCompletion {
+  date: string;
+  daily_habit: string;
+  vocal_habit: string;
+  completed: boolean;
 }
 
-const HABIT_DATA: HabitData[] = [
-  {
-    dailyLabel: 'Morning coffee', dailyEmoji: '☕',
-    vocalLabel: '2-min vocal hum', vocalEmoji: '🎵',
-    days: [true, true, true, false, true, true, true],
-  },
-  {
-    dailyLabel: 'Brushing teeth', dailyEmoji: '🪥',
-    vocalLabel: 'Deep breathing', vocalEmoji: '🌬️',
-    days: [true, true, false, false, true, true, false],
-  },
-  {
-    dailyLabel: 'Bedtime routine', dailyEmoji: '🌙',
-    vocalLabel: 'Silent rest (2 min)', vocalEmoji: '🤫',
-    days: [true, false, true, false, true, false, true],
-  },
-];
+function computeWeekDates(): { iso: string; label: string }[] {
+  const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const days: { iso: string; label: string }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push({ iso: d.toISOString().slice(0, 10), label: dayLabels[d.getDay()] });
+  }
+  return days;
+}
 
 const TOP_RITUALS = [
   { emoji: '🎵', name: 'Vocal Hum', category: 'Warm-up', days: [true, true, true, false, true, true, true] },
   { emoji: '🌬️', name: 'Deep Breathing', category: 'Breath', days: [true, true, false, false, true, true, false] },
   { emoji: '💋', name: 'Lip Trill', category: 'Articulation', days: [true, false, true, false, true, false, true] },
 ];
+
+const GOAL_PROGRESS: { id: Goal; progress: number }[] = [
+  { id: 'reduce_strain', progress: 72 },
+  { id: 'build_endurance', progress: 45 },
+  { id: 'sound_confident', progress: 88 },
+];
+
+const SELECTED_TRAIT = 'Confident';
+const TRAIT_PROGRESS = 63; // % of the way to sounding like this trait
+
+const TRAIT_RING_RADIUS = 54;
+const TRAIT_RING_CIRCUMFERENCE = 2 * Math.PI * TRAIT_RING_RADIUS;
 
 const EFFORT_COLOR = (n: number) =>
   n <= 3 ? '#21e8ff' : n <= 6 ? '#f59e0b' : '#ef4444';
@@ -121,20 +129,45 @@ function MetricCircle({ value, label, unit, color }: { value: string; label: str
   );
 }
 
-export default function WeeklyReportPage({ onBack }: { onBack: () => void }) {
+interface WeeklyReportPageProps {
+  onBack: () => void;
+  habitPairs: HabitPair[];
+  habitCompletions: HabitCompletion[];
+}
+
+export default function WeeklyReportPage({ onBack, habitPairs, habitCompletions }: WeeklyReportPageProps) {
   const [selectedDay, setSelectedDay] = useState<DayData | null>(null);
+
+  const weekDates = computeWeekDates();
+  const realHabitRows = habitPairs.map(pair => {
+    const daily = DAILY_HABITS.find(h => h.id === pair.daily);
+    const vocal = VOCAL_HABITS.find(h => h.id === pair.vocal);
+    return {
+      dailyLabel: daily?.label ?? pair.daily,
+      dailyEmoji: daily?.emoji ?? '🎯',
+      vocalLabel: vocal?.label ?? pair.vocal,
+      vocalEmoji: vocal?.emoji ?? '🎙️',
+      days: weekDates.map(wd => habitCompletions.some(c =>
+        c.date === wd.iso && c.daily_habit === pair.daily && c.vocal_habit === pair.vocal && c.completed
+      )),
+    };
+  });
 
   const checkedInDays = WEEK_DATA.filter(d => d.checkInDone).length;
   const totalRituals = WEEK_DATA.reduce((s, d) => s + d.ritualsCompleted, 0);
   const maxRituals = WEEK_DATA.reduce((s, d) => s + d.totalRituals, 0);
-  const avgEffort = (() => {
-    const days = WEEK_DATA.filter(d => d.vocaEffort !== null);
-    return days.length ? (days.reduce((s, d) => s + (d.vocaEffort ?? 0), 0) / days.length).toFixed(1) : '—';
+  const avgConfidence = (() => {
+    const days = WEEK_DATA.filter(d => d.vocalConfidence !== null);
+    return days.length ? (days.reduce((s, d) => s + (d.vocalConfidence ?? 0), 0) / days.length).toFixed(1) : '—';
   })();
   const avgResonance = (() => {
     const days = WEEK_DATA.filter(d => d.resonanceScore !== undefined);
     return days.length ? Math.round(days.reduce((s, d) => s + (d.resonanceScore ?? 0), 0) / days.length) : null;
   })();
+
+  const ritualPct = Math.round((totalRituals / maxRituals) * 100);
+  const bestDay = WEEK_DATA.filter(d => d.vocalConfidence !== null).sort((a, b) => (b.vocalConfidence ?? 0) - (a.vocalConfidence ?? 0))[0] ?? null;
+  const worstDay = WEEK_DATA.filter(d => d.vocalConfidence !== null).sort((a, b) => (a.vocalConfidence ?? 0) - (b.vocalConfidence ?? 0))[0] ?? null;
 
   const allSymptoms = WEEK_DATA.flatMap(d => d.symptoms);
   const symptomCounts: Record<string, number> = {};
@@ -288,22 +321,157 @@ export default function WeeklyReportPage({ onBack }: { onBack: () => void }) {
         )}
 
         {/* AI Insight */}
-        <div className="relative flex flex-col gap-3 py-7 px-6 mb-8">
-          <div className="absolute inset-0 rounded-3xl pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(23,169,201,0.1) 0%, rgba(33,232,255,0.04) 55%, transparent 100%)' }} />
-          <p className="text-[9px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.6)' }}>AI Insight</p>
-          <p className="text-[14px] font-light text-zinc-200 leading-relaxed">
-            Strong week overall — you checked in <span className="text-[#21e8ff]">{checkedInDays} out of 7 days</span> with an average vocal effort of <span className="text-[#f59e0b]">{avgEffort}/10</span>, indicating moderate but manageable demand. Tuesday showed the highest strain, likely linked to extended presentation time. Friday was your best session. Your ritual completion rate of <span className="text-[#818cf8]">{Math.round((totalRituals / maxRituals) * 100)}%</span> is solid. Keep the streak going next week.
-          </p>
+        <div
+          className="relative mb-8 overflow-hidden rounded-3xl"
+          style={{
+            background: 'linear-gradient(160deg, rgba(23,169,201,0.06) 0%, rgba(13,16,21,0.9) 60%)',
+            border: '1px solid rgba(33,232,255,0.10)',
+          }}
+        >
+          <div className="absolute inset-0 rounded-3xl pointer-events-none" style={{ background: 'radial-gradient(ellipse at 60% 0%, rgba(23,169,201,0.08) 0%, transparent 60%)' }} />
+          <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(33,232,255,0.25), transparent)' }} />
+
+          <div className="px-7 py-8 flex flex-col gap-8">
+            <p className="text-[9px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.6)' }}>AI Insight</p>
+
+            {/* Overview */}
+            <div className="flex flex-col gap-2">
+              <p className="text-[8px] font-mono uppercase tracking-widest text-zinc-500">Overview</p>
+              <p className="text-[13px] font-light text-zinc-300 leading-relaxed">
+                You checked in <span className="text-[#21e8ff]">{checkedInDays} out of 7 days</span> with an average confidence of{' '}
+                <span className="text-[#a78bfa]">{avgConfidence}/10</span> and completed{' '}
+                <span className="text-[#818cf8]">{ritualPct}% of your rituals</span>.
+                {avgResonance !== null && <> Average resonance sat at <span className="text-[#10b981]">{avgResonance}</span> across recorded sessions.</>}
+              </p>
+            </div>
+
+            {/* What improved */}
+            <div className="flex flex-col gap-2">
+              <p className="text-[8px] font-mono uppercase tracking-widest text-zinc-500">What improved</p>
+              <p className="text-[13px] font-light text-zinc-300 leading-relaxed">
+                {bestDay
+                  ? <><span className="text-emerald-400">{bestDay.date}</span> was your strongest day — confidence peaked at <span className="text-emerald-400">{bestDay.vocalConfidence}/10</span>{bestDay.resonanceScore !== undefined ? <> with a resonance score of <span className="text-emerald-400">{bestDay.resonanceScore}</span></> : ''}. </>
+                  : ''}
+                {topSupportArea === 'Confidence'
+                  ? 'Confidence was a recurring focus area this week, suggesting meaningful engagement with vocal presence work.'
+                  : 'Consistent ritual completion on your stronger days reinforced positive vocal patterns throughout the week.'}
+              </p>
+            </div>
+
+            {/* What needs work + recovery */}
+            <div className="flex flex-col gap-2">
+              <p className="text-[8px] font-mono uppercase tracking-widest text-zinc-500">Needs attention · Recovery</p>
+              <p className="text-[13px] font-light text-zinc-300 leading-relaxed">
+                {worstDay
+                  ? <><span className="text-amber-400">{worstDay.date}</span> showed the most strain — confidence dropped to <span className="text-amber-400">{worstDay.vocalConfidence}/10</span>{worstDay.symptoms.length > 0 ? <> with {worstDay.symptoms.join(', ').toLowerCase()} reported</> : ''}. </>
+                  : ''}
+                {topSymptoms.length > 0
+                  ? <>Focus on hydration and vocal rest on high-demand days. <span className="text-amber-400">{topSymptoms[0][0]}</span> was your most frequent symptom — consider adding a cool-down ritual after extended voice use.</>
+                  : 'Keep protecting recovery days with silence windows and warm fluids to maintain the upward trend.'}
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Key metrics */}
         <div className="flex justify-around mb-10">
           <MetricCircle value={String(checkedInDays)} label="Check-ins" unit={`/7`} color="#21e8ff" />
           <MetricCircle value={String(totalRituals)} label="Rituals done" unit={`/${maxRituals}`} color="#818cf8" />
-          <MetricCircle value={String(avgEffort)} label="Avg vocal fatigue" unit="/10" color="#f59e0b" />
+          <MetricCircle value={String(avgConfidence)} label="Avg confidence" unit="/10" color="#a78bfa" />
           {avgResonance !== null && (
             <MetricCircle value={String(avgResonance)} label="Avg vocal effort" unit="%" color="#10b981" />
           )}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+
+          {/* Goal progress */}
+          <div
+            className="rounded-[28px] p-6 relative overflow-hidden"
+            style={{
+              background: 'linear-gradient(145deg, rgba(23,169,201,0.06) 0%, rgba(13,16,21,0.85) 60%)',
+              border: '1px solid rgba(33,232,255,0.10)',
+            }}
+          >
+            <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(33,232,255,0.25), transparent)' }} />
+            <h2 className="text-base font-light tracking-tight text-white mb-6 relative z-10">Progress toward your goals</h2>
+            <div className="flex flex-col gap-5 relative z-10">
+              {GOAL_PROGRESS.map(({ id, progress }) => {
+                const goal = GOALS.find(g => g.id === id);
+                if (!goal) return null;
+                return (
+                  <div key={id}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-base">{goal.emoji}</span>
+                      <span className="text-sm font-light text-white">{goal.label}</span>
+                      <span className="ml-auto text-[11px] font-mono tabular-nums text-[#21e8ff]">{progress}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-white/[0.04] overflow-hidden">
+                      <motion.div
+                        className="h-full rounded-full"
+                        style={{ background: 'linear-gradient(90deg, #17A9C9 0%, #21e8ff 100%)' }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${progress}%` }}
+                        transition={{ duration: 0.8, ease: 'easeOut' }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Voice trait */}
+          {(() => {
+            const trait = TRAITS.find(t => t.label === SELECTED_TRAIT);
+            if (!trait) return null;
+            const colors = TRAIT_COLORS[trait.label];
+            const offset = TRAIT_RING_CIRCUMFERENCE * (1 - TRAIT_PROGRESS / 100);
+            const gradientId = `traitRingGradient-${trait.label}`;
+            return (
+              <div
+                className="rounded-[28px] p-6 relative overflow-hidden"
+                style={{
+                  background: 'linear-gradient(145deg, rgba(23,169,201,0.06) 0%, rgba(13,16,21,0.85) 60%)',
+                  border: '1px solid rgba(33,232,255,0.10)',
+                }}
+              >
+                <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(33,232,255,0.25), transparent)' }} />
+                <h2 className="text-base font-light tracking-tight text-white mb-6 relative z-10">Sounding more {trait.label.toLowerCase()}</h2>
+                <div className="flex items-center gap-6 relative z-10">
+                  <div className="relative w-[132px] h-[132px] flex-shrink-0">
+                    <svg width="132" height="132" viewBox="0 0 132 132" className="-rotate-90">
+                      <circle cx="66" cy="66" r={TRAIT_RING_RADIUS} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="10" />
+                      <motion.circle
+                        cx="66" cy="66" r={TRAIT_RING_RADIUS} fill="none" stroke={`url(#${gradientId})`}
+                        strokeWidth="10" strokeLinecap="round"
+                        strokeDasharray={TRAIT_RING_CIRCUMFERENCE}
+                        initial={{ strokeDashoffset: TRAIT_RING_CIRCUMFERENCE }}
+                        animate={{ strokeDashoffset: offset }}
+                        transition={{ duration: 1, ease: 'easeOut' }}
+                      />
+                      <defs>
+                        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor={colors.primary} stopOpacity="0.5" />
+                          <stop offset="100%" stopColor={colors.primary} />
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                      <span className="text-2xl" style={{ filter: `drop-shadow(0 0 8px ${colors.glow})` }}>{trait.emoji}</span>
+                      <span className="text-[15px] font-light tabular-nums text-white">{TRAIT_PROGRESS}%</span>
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-mono uppercase tracking-widest text-zinc-600 mb-1.5">Your desired trait</p>
+                    <p className="text-sm font-medium mb-2" style={{ color: colors.primary }}>{trait.label}</p>
+                    <p className="text-xs text-zinc-500 leading-relaxed">{trait.subtitle}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
         </div>
 
         {/* Habits this week */}
@@ -317,46 +485,53 @@ export default function WeeklyReportPage({ onBack }: { onBack: () => void }) {
           <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(33,232,255,0.25), transparent)' }} />
           <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(23,169,201,0.08) 0%, transparent 70%)', filter: 'blur(20px)' }} />
           <h2 className="text-base font-light tracking-tight text-white mb-6 relative z-10">Your habits this week</h2>
-          <div className="flex flex-col gap-8 relative z-10">
-            {HABIT_DATA.map((habit, i) => {
-              const doneCount = habit.days.filter(Boolean).length;
-              return (
-                <div key={i}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-base">{habit.dailyEmoji}</span>
-                    <span className="text-sm font-light text-white">{habit.dailyLabel}</span>
-                    <span className="text-zinc-700 text-xs">→</span>
-                    <span className="text-base">{habit.vocalEmoji}</span>
-                    <span className="text-sm font-light text-white">{habit.vocalLabel}</span>
-                    <span className="ml-auto text-[10px] font-mono tabular-nums text-zinc-300">{doneCount}/7</span>
+          {realHabitRows.length === 0 ? (
+            <p className="text-[11px] text-zinc-600 text-center py-4 relative z-10">No habits set yet</p>
+          ) : (
+            <div className="flex flex-col gap-8 relative z-10">
+              {realHabitRows.map((habit, i) => {
+                const doneCount = habit.days.filter(Boolean).length;
+                return (
+                  <div key={i}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-base">{habit.dailyEmoji}</span>
+                      <span className="text-sm font-light text-white">{habit.dailyLabel}</span>
+                      <span className="text-zinc-700 text-xs">→</span>
+                      <span className="text-base">{habit.vocalEmoji}</span>
+                      <span className="text-sm font-light text-white">{habit.vocalLabel}</span>
+                      <span className="ml-auto text-[10px] font-mono tabular-nums text-zinc-300">{doneCount}/7</span>
+                    </div>
+                    <div className="flex gap-1.5 mt-5">
+                      {weekDates.map((wd, di) => {
+                        const done = habit.days[di];
+                        return (
+                          <div key={wd.iso} className="flex flex-col items-center gap-1.5 flex-1">
+                            <div
+                              className="w-9 h-9 rounded-full"
+                              style={done ? {
+                                background: 'radial-gradient(circle at 38% 32%, rgba(33,232,255,0.20) 0%, rgba(23,169,201,0.08) 100%)',
+                                border: '1px solid rgba(33,232,255,0.40)',
+                                boxShadow: '0 0 14px rgba(33,232,255,0.18)',
+                              } : {
+                                background: 'rgba(255,255,255,0.025)',
+                                border: '1px solid rgba(255,255,255,0.06)',
+                              }}
+                            />
+                            <span className="text-[8px] font-mono text-zinc-600">{wd.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="flex gap-1.5 mt-5">
-                    {WEEK_DATA.map((day, di) => {
-                      const done = habit.days[di];
-                      return (
-                        <div key={di} className="flex flex-col items-center gap-1.5 flex-1">
-                          <div
-                            className="w-9 h-9 rounded-full"
-                            style={done ? {
-                              background: 'radial-gradient(circle at 38% 32%, rgba(33,232,255,0.20) 0%, rgba(23,169,201,0.08) 100%)',
-                              border: '1px solid rgba(33,232,255,0.40)',
-                              boxShadow: '0 0 14px rgba(33,232,255,0.18)',
-                            } : {
-                              background: 'rgba(255,255,255,0.025)',
-                              border: '1px solid rgba(255,255,255,0.06)',
-                            }}
-                          />
-                          <span className="text-[8px] font-mono text-zinc-600">{day.date}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
+        <p className="text-[12px] text-zinc-700 text-center leading-relaxed mt-12 px-6">
+          Vocalii provides educational, wellness, and performance support. It does not diagnose or treat voice disorders. If you experience persistent hoarseness, pain, voice loss, swallowing difficulty, or other concerning symptoms, consult an ENT, SLP, or medical professional.
+        </p>
 
       </div>
 
