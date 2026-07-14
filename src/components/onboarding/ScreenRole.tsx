@@ -12,14 +12,14 @@ interface Props {
 }
 
 export const ROLES: { id: Role; label: string; subtitle: string; icon: React.ReactNode; color: string; glow: string; image: string }[] = [
-  { id: 'teacher', label: 'Educator / Teacher', subtitle: 'K-12 teachers, university faculty, tutors, instructors.', icon: <GraduationCap className="w-5 h-5" />, color: '#a78bfa', glow: 'rgba(167,139,250,0.12)', image: '/src/assets/images/teacher.png' },
-  { id: 'trainer', label: 'Corporate Trainer', subtitle: 'L&D professionals, trainers, workshop facilitators, instructional coaches.', icon: <Users className="w-5 h-5" />, color: '#f59e0b', glow: 'rgba(245,158,11,0.12)', image: '/src/assets/images/trainer.png' },
-  { id: 'speaker', label: 'Speaker / Presenter', subtitle: 'Keynote speakers, presenters, moderators, emcees.', icon: <Mic className="w-5 h-5" />, color: '#f43f5e', glow: 'rgba(244,63,94,0.12)', image: '/src/assets/images/speaker.png' },
-  { id: 'executive', label: 'Executive / Leader', subtitle: 'Managers, directors, founders, C-suite, team leads.', icon: <Briefcase className="w-5 h-5" />, color: '#6366f1', glow: 'rgba(99,102,241,0.12)', image: '/src/assets/images/executive.png' },
-  { id: 'creator', label: 'Content Creator / Coach', subtitle: 'YouTubers, podcasters, online educators, coaches, consultants.', icon: <Video className="w-5 h-5" />, color: '#10b981', glow: 'rgba(16,185,129,0.12)', image: '/src/assets/images/creator.png' },
-  { id: 'singer', label: 'Singer / Performer', subtitle: 'Singers, actors, voice-over artists, performers.', icon: <Music className="w-5 h-5" />, color: '#f97316', glow: 'rgba(249,115,22,0.12)', image: '/src/assets/images/singer.png' },
-  { id: 'therapy', label: 'Voice Therapy / Rehab', subtitle: 'Rebuilding or supporting your voice after injury, illness, surgery, or therapy.', icon: <HeartPulse className="w-5 h-5" />, color: '#17A9C9', glow: 'rgba(23,169,201,0.12)', image: '/src/assets/images/therapy.png' },
-  { id: 'other', label: 'Other', subtitle: '', icon: <MoreHorizontal className="w-5 h-5" />, color: '#94a3b8', glow: 'rgba(148,163,184,0.12)', image: '/src/assets/images/other.png' },
+  { id: 'teacher', label: 'Educator / Teacher', subtitle: 'K-12 teachers, university faculty, tutors, instructors.', icon: <GraduationCap className="w-5 h-5" />, color: '#a78bfa', glow: 'rgba(167,139,250,0.12)', image: '/assets/images/teacher.png' },
+  { id: 'trainer', label: 'Corporate Trainer', subtitle: 'L&D professionals, trainers, workshop facilitators, instructional coaches.', icon: <Users className="w-5 h-5" />, color: '#f59e0b', glow: 'rgba(245,158,11,0.12)', image: '/assets/images/trainer.png' },
+  { id: 'speaker', label: 'Speaker / Presenter', subtitle: 'Keynote speakers, presenters, moderators, emcees.', icon: <Mic className="w-5 h-5" />, color: '#f43f5e', glow: 'rgba(244,63,94,0.12)', image: '/assets/images/speaker.png' },
+  { id: 'executive', label: 'Executive / Leader', subtitle: 'Managers, directors, founders, C-suite, team leads.', icon: <Briefcase className="w-5 h-5" />, color: '#6366f1', glow: 'rgba(99,102,241,0.12)', image: '/assets/images/executive.png' },
+  { id: 'creator', label: 'Content Creator / Coach', subtitle: 'YouTubers, podcasters, online educators, coaches, consultants.', icon: <Video className="w-5 h-5" />, color: '#10b981', glow: 'rgba(16,185,129,0.12)', image: '/assets/images/creator.png' },
+  { id: 'singer', label: 'Singer / Performer', subtitle: 'Singers, actors, voice-over artists, performers.', icon: <Music className="w-5 h-5" />, color: '#f97316', glow: 'rgba(249,115,22,0.12)', image: '/assets/images/singer.png' },
+  { id: 'therapy', label: 'Voice Therapy / Rehab', subtitle: 'Rebuilding or supporting your voice after injury, illness, surgery, or therapy.', icon: <HeartPulse className="w-5 h-5" />, color: '#17A9C9', glow: 'rgba(23,169,201,0.12)', image: '/assets/images/therapy.png' },
+  { id: 'other', label: 'Other', subtitle: '', icon: <MoreHorizontal className="w-5 h-5" />, color: '#94a3b8', glow: 'rgba(148,163,184,0.12)', image: '/assets/images/other.png' },
 ];
 
 export default function ScreenRole({ value, onChange, onNext, onBack, step, totalSteps }: Props) {

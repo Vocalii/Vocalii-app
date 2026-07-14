@@ -14,13 +14,13 @@ import { supabase } from '../../lib/supabase';
 const CAROUSEL_ITEMS = [
   {
     id: 'vocal1',
-    src: 'src/assets/images/discovering_their_unique_voice.png',
+    src: '/assets/images/discovering_their_unique_voice.png',
     title: 'Build Your Voice Identity',
     description: 'Track your vocal health, build lasting habits, and perform at your best — every day.',
   },
   {
     id: 'vocal2',
-    src: '/src/assets/images/charismatic_vocal_coach.png',
+    src: '/assets/images/charismatic_vocal_coach.png',
     title: 'AI-Powered Coaching',
     description: 'Personalised coaching tips based on your daily check-ins and goals.',
   },

@@ -170,7 +170,7 @@ export default function ScreenIdentity({ value, customIdentity, onChange, onCust
       {/* RIGHT PANEL */}
       <div className="hidden lg:block lg:w-[32%] relative overflow-hidden">
         <img
-          src="/src/assets/images/cod_ghost_operator_1780463136031.png"
+          src="/assets/images/cod_ghost_operator_1780463136031.png"
           alt="placeholder"
           className="absolute inset-0 w-full h-full object-cover"
         />
