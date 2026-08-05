@@ -2,74 +2,68 @@ import { describe, it, expect } from 'vitest';
 import { calculateVoiceReadiness } from './voiceReadiness';
 
 describe('calculateVoiceReadiness', () => {
-  it('best case: low effort, high confidence, no symptoms, habit done', () => {
+  it('best case: low effort, low demand, no symptoms', () => {
     const result = calculateVoiceReadiness({
       effort_score: 1,
-      confidence_score: 10,
+      demand_score: 1,
       symptoms: [],
-      habit_completed: true,
     });
     expect(result.score).toBe(100);
     expect(result.label).toBe('Voice Ready');
     expect(result.contributing_factors.effort).toBe(100);
-    expect(result.contributing_factors.confidence).toBe(100);
+    expect(result.contributing_factors.demand).toBe(100);
     expect(result.contributing_factors.symptoms).toBe(100);
-    expect(result.contributing_factors.habit).toBe(100);
   });
 
-  it('worst case: max effort, zero confidence, many symptoms, no habit', () => {
+  it('worst case: max effort, max demand, many symptoms', () => {
     const result = calculateVoiceReadiness({
       effort_score: 10,
-      confidence_score: 1,
+      demand_score: 5,
       symptoms: ['pain', 'hoarseness', 'fatigue', 'dryness', 'tightness', 'swelling', 'strain'],
-      habit_completed: false,
     });
     expect(result.score).toBeLessThan(15);
     expect(result.label).toBe('Rest & Recover');
     expect(result.contributing_factors.effort).toBe(0);
-    expect(result.contributing_factors.habit).toBe(0);
+    expect(result.contributing_factors.demand).toBe(0);
     expect(result.contributing_factors.symptoms).toBe(0);
   });
 
   it('no symptoms gives full symptoms score', () => {
     const result = calculateVoiceReadiness({
       effort_score: 5,
-      confidence_score: 5,
+      demand_score: 3,
       symptoms: [],
-      habit_completed: false,
     });
     expect(result.contributing_factors.symptoms).toBe(100);
   });
 
   it('each symptom reduces symptoms score by 15, floored at 0', () => {
     const one = calculateVoiceReadiness({
-      effort_score: 5, confidence_score: 5, symptoms: ['hoarseness'], habit_completed: false,
+      effort_score: 5, demand_score: 3, symptoms: ['hoarseness'],
     });
     expect(one.contributing_factors.symptoms).toBe(85);
 
     const seven = calculateVoiceReadiness({
-      effort_score: 5, confidence_score: 5, symptoms: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], habit_completed: false,
+      effort_score: 5, demand_score: 3, symptoms: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
     });
     expect(seven.contributing_factors.symptoms).toBe(0);
   });
 
-  it('missing acoustic fields uses 4-factor weights', () => {
+  it('missing acoustic fields uses 3-factor weights', () => {
     const result = calculateVoiceReadiness({
       effort_score: 1,
-      confidence_score: 10,
+      demand_score: 1,
       symptoms: [],
-      habit_completed: true,
     });
     expect(result.contributing_factors.acoustic).toBeUndefined();
     expect(result.score).toBe(100);
   });
 
-  it('with acoustic data blends all 6 factors', () => {
+  it('with acoustic data blends all factors', () => {
     const result = calculateVoiceReadiness({
       effort_score: 1,
-      confidence_score: 10,
+      demand_score: 1,
       symptoms: [],
-      habit_completed: true,
       acoustic_clarity: 100,
       acoustic_fatigue: 0,
     });
@@ -79,11 +73,11 @@ describe('calculateVoiceReadiness', () => {
 
   it('acoustic_fatigue is inverted (lower fatigue = higher score)', () => {
     const lowFatigue = calculateVoiceReadiness({
-      effort_score: 5, confidence_score: 5, symptoms: [], habit_completed: false,
+      effort_score: 5, demand_score: 3, symptoms: [],
       acoustic_clarity: 50, acoustic_fatigue: 0,
     });
     const highFatigue = calculateVoiceReadiness({
-      effort_score: 5, confidence_score: 5, symptoms: [], habit_completed: false,
+      effort_score: 5, demand_score: 3, symptoms: [],
       acoustic_clarity: 50, acoustic_fatigue: 100,
     });
     expect(lowFatigue.score).toBeGreaterThan(highFatigue.score);
@@ -107,9 +101,8 @@ describe('calculateVoiceReadiness', () => {
   it('all inputs provided (combined integration)', () => {
     const result = calculateVoiceReadiness({
       effort_score: 3,
-      confidence_score: 8,
+      demand_score: 4,
       symptoms: ['dryness'],
-      habit_completed: true,
       acoustic_clarity: 75,
       acoustic_fatigue: 20,
     });

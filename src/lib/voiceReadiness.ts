@@ -1,8 +1,7 @@
 export type VoiceReadinessInput = {
   effort_score: number;      // 1-10, lower is better
-  confidence_score: number;  // 1-10, higher is better
+  demand_score: number;      // 1-5, how much the voice was used today — lower is better
   symptoms: string[];
-  habit_completed: boolean;
   acoustic_clarity?: number;  // 0-100
   acoustic_fatigue?: number;  // 0-100, lower is better
 };
@@ -12,9 +11,8 @@ export type VoiceReadinessOutput = {
   label: string;
   contributing_factors: {
     effort: number;
-    confidence: number;
+    demand: number;
     symptoms: number;
-    habit: number;
     acoustic?: number;
   };
 };
@@ -24,9 +22,8 @@ export function calculateVoiceReadiness(input: VoiceReadinessInput): VoiceReadin
     input.acoustic_clarity !== undefined && input.acoustic_fatigue !== undefined;
 
   const effortContrib = ((10 - input.effort_score) / 9) * 100;
-  const confidenceContrib = (input.confidence_score / 10) * 100;
+  const demandContrib = ((5 - input.demand_score) / 4) * 100;
   const symptomsContrib = Math.max(0, 100 - input.symptoms.length * 15);
-  const habitContrib = input.habit_completed ? 100 : 0;
 
   let score: number;
   let acousticContrib: number | undefined;
@@ -38,17 +35,15 @@ export function calculateVoiceReadiness(input: VoiceReadinessInput): VoiceReadin
 
     score =
       effortContrib * 0.20 +
-      confidenceContrib * 0.20 +
-      symptomsContrib * 0.25 +
-      habitContrib * 0.15 +
+      demandContrib * 0.20 +
+      symptomsContrib * 0.30 +
       clarityContrib * 0.15 +
       fatigueContrib * 0.15;
   } else {
     score =
-      effortContrib * 0.30 +
-      confidenceContrib * 0.30 +
-      symptomsContrib * 0.25 +
-      habitContrib * 0.15;
+      effortContrib * 0.35 +
+      demandContrib * 0.35 +
+      symptomsContrib * 0.30;
   }
 
   const roundedScore = Math.min(100, Math.max(0, Math.round(score)));
@@ -64,9 +59,8 @@ export function calculateVoiceReadiness(input: VoiceReadinessInput): VoiceReadin
     label,
     contributing_factors: {
       effort: Math.round(effortContrib),
-      confidence: Math.round(confidenceContrib),
+      demand: Math.round(demandContrib),
       symptoms: symptomsContrib,
-      habit: habitContrib,
       ...(hasAcoustic ? { acoustic: acousticContrib } : {}),
     },
   };

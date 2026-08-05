@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, ChevronLeft, Download, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GOALS } from './onboarding/ScreenGoals';
-import { TRAITS, TRAIT_COLORS } from './onboarding/ScreenVoiceTraits';
+import { TRAITS } from './onboarding/ScreenVoiceTraits';
 import { DAILY_HABITS, VOCAL_HABITS } from './onboarding/ScreenHabits';
 import { Goal, HabitPair } from '../types/onboarding';
+import { supabase } from '../lib/supabase';
+import GoalProgressCard from './GoalProgressCard';
+import TraitAlignmentGlow, { computeTraitScore, getFeelingStatement } from './TraitAlignmentGlow';
 
 interface DayData {
   date: string;          // 'Mon', 'Tue', etc.
@@ -91,18 +93,6 @@ const TOP_RITUALS = [
   { emoji: '💋', name: 'Lip Trill', category: 'Articulation', days: [true, false, true, false, true, false, true] },
 ];
 
-const GOAL_PROGRESS: { id: Goal; progress: number }[] = [
-  { id: 'reduce_strain', progress: 72 },
-  { id: 'build_endurance', progress: 45 },
-  { id: 'sound_confident', progress: 88 },
-];
-
-const SELECTED_TRAIT = 'Confident';
-const TRAIT_PROGRESS = 63; // % of the way to sounding like this trait
-
-const TRAIT_RING_RADIUS = 54;
-const TRAIT_RING_CIRCUMFERENCE = 2 * Math.PI * TRAIT_RING_RADIUS;
-
 const EFFORT_COLOR = (n: number) =>
   n <= 3 ? '#21e8ff' : n <= 6 ? '#f59e0b' : '#ef4444';
 
@@ -133,10 +123,34 @@ interface WeeklyReportPageProps {
   onBack: () => void;
   habitPairs: HabitPair[];
   habitCompletions: HabitCompletion[];
+  userId: string | null;
+  goal: Goal | null;
+  dailyRitualIds: string[];
+  onResetWeeklyCheckIn?: () => void;
 }
 
-export default function WeeklyReportPage({ onBack, habitPairs, habitCompletions }: WeeklyReportPageProps) {
+export default function WeeklyReportPage({ onBack, habitPairs, habitCompletions, userId, goal, dailyRitualIds, onResetWeeklyCheckIn }: WeeklyReportPageProps) {
   const [selectedDay, setSelectedDay] = useState<DayData | null>(null);
+  const [traitCheckin, setTraitCheckin] = useState<{ trait: string; traitQuestion1: number | null; traitQuestion2: number | null } | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (!userId) {
+      setTraitCheckin(null);
+      return;
+    }
+    let cancelled = false;
+    supabase.from('weekly_checkins')
+      .select('trait, trait_question_1, trait_question_2')
+      .eq('user_id', userId)
+      .order('week_start', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setTraitCheckin(data ? { trait: data.trait, traitQuestion1: data.trait_question_1, traitQuestion2: data.trait_question_2 } : null);
+      });
+    return () => { cancelled = true; };
+  }, [userId]);
 
   const weekDates = computeWeekDates();
   const realHabitRows = habitPairs.map(pair => {
@@ -195,6 +209,15 @@ export default function WeeklyReportPage({ onBack, habitPairs, habitCompletions 
                 <ChevronLeft className="w-4 h-4 text-[#21e8ff]" />
               </button>
               <span className="text-[11px] font-mono tracking-widest uppercase text-zinc-500">Back</span>
+              {onResetWeeklyCheckIn && (
+                <button
+                  onClick={onResetWeeklyCheckIn}
+                  className="ml-2 text-[9px] font-mono tracking-widest uppercase text-zinc-600 hover:text-zinc-400 transition-colors cursor-pointer underline decoration-dotted underline-offset-2"
+                  title="Dev/testing only — clears this week's check-in so you can complete it again"
+                >
+                  Reset check-in (dev)
+                </button>
+              )}
             </div>
             <h2 className="text-3xl font-light tracking-tight text-white mb-2">Weekly Report</h2>
             <p className="text-sm text-zinc-400 max-w-xl leading-relaxed">
@@ -386,48 +409,39 @@ export default function WeeklyReportPage({ onBack, habitPairs, habitCompletions 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
           {/* Goal progress */}
-          <div
-            className="rounded-[28px] p-6 relative overflow-hidden"
-            style={{
-              background: 'linear-gradient(145deg, rgba(23,169,201,0.06) 0%, rgba(13,16,21,0.85) 60%)',
-              border: '1px solid rgba(33,232,255,0.10)',
-            }}
-          >
-            <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(33,232,255,0.25), transparent)' }} />
-            <h2 className="text-base font-light tracking-tight text-white mb-6 relative z-10">Progress toward your goals</h2>
-            <div className="flex flex-col gap-5 relative z-10">
-              {GOAL_PROGRESS.map(({ id, progress }) => {
-                const goal = GOALS.find(g => g.id === id);
-                if (!goal) return null;
-                return (
-                  <div key={id}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-base">{goal.emoji}</span>
-                      <span className="text-sm font-light text-white">{goal.label}</span>
-                      <span className="ml-auto text-[11px] font-mono tabular-nums text-[#21e8ff]">{progress}%</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-white/[0.04] overflow-hidden">
-                      <motion.div
-                        className="h-full rounded-full"
-                        style={{ background: 'linear-gradient(90deg, #17A9C9 0%, #21e8ff 100%)' }}
-                        initial={{ width: 0 }}
-                        animate={{ width: `${progress}%` }}
-                        transition={{ duration: 0.8, ease: 'easeOut' }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <GoalProgressCard
+            userId={userId}
+            goal={goal}
+            dailyRitualIds={dailyRitualIds}
+            habitPairsCount={habitPairs.length}
+          />
 
           {/* Voice trait */}
           {(() => {
-            const trait = TRAITS.find(t => t.label === SELECTED_TRAIT);
-            if (!trait) return null;
-            const colors = TRAIT_COLORS[trait.label];
-            const offset = TRAIT_RING_CIRCUMFERENCE * (1 - TRAIT_PROGRESS / 100);
-            const gradientId = `traitRingGradient-${trait.label}`;
+            const KNOWN_TRAITS = ['Confident', 'Calm', 'Clear', 'Warm', 'Engaging'] as const;
+            const traitLabel = traitCheckin?.trait;
+            const trait = traitLabel ? TRAITS.find(t => t.label === traitLabel) : undefined;
+            const hasScore = traitCheckin != null && traitCheckin.traitQuestion1 != null && traitCheckin.traitQuestion2 != null
+              && (KNOWN_TRAITS as readonly string[]).includes(traitCheckin.trait);
+
+            if (!trait || !hasScore || !traitCheckin) {
+              return (
+                <div
+                  className="rounded-[28px] p-6 relative overflow-hidden flex flex-col items-center justify-center text-center gap-2 min-h-[220px]"
+                  style={{
+                    background: 'linear-gradient(145deg, rgba(23,169,201,0.06) 0%, rgba(13,16,21,0.85) 60%)',
+                    border: '1px solid rgba(33,232,255,0.10)',
+                  }}
+                >
+                  <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(33,232,255,0.25), transparent)' }} />
+                  <p className="text-sm text-zinc-500 relative z-10">Complete a weekly check-in to see this</p>
+                </div>
+              );
+            }
+
+            const score = computeTraitScore(traitCheckin.traitQuestion1 as number, traitCheckin.traitQuestion2 as number);
+            const feelingStatement = getFeelingStatement(trait.label, score);
+
             return (
               <div
                 className="rounded-[28px] p-6 relative overflow-hidden"
@@ -439,33 +453,11 @@ export default function WeeklyReportPage({ onBack, habitPairs, habitCompletions 
                 <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(33,232,255,0.25), transparent)' }} />
                 <h2 className="text-base font-light tracking-tight text-white mb-6 relative z-10">Sounding more {trait.label.toLowerCase()}</h2>
                 <div className="flex items-center gap-6 relative z-10">
-                  <div className="relative w-[132px] h-[132px] flex-shrink-0">
-                    <svg width="132" height="132" viewBox="0 0 132 132" className="-rotate-90">
-                      <circle cx="66" cy="66" r={TRAIT_RING_RADIUS} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="10" />
-                      <motion.circle
-                        cx="66" cy="66" r={TRAIT_RING_RADIUS} fill="none" stroke={`url(#${gradientId})`}
-                        strokeWidth="10" strokeLinecap="round"
-                        strokeDasharray={TRAIT_RING_CIRCUMFERENCE}
-                        initial={{ strokeDashoffset: TRAIT_RING_CIRCUMFERENCE }}
-                        animate={{ strokeDashoffset: offset }}
-                        transition={{ duration: 1, ease: 'easeOut' }}
-                      />
-                      <defs>
-                        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-                          <stop offset="0%" stopColor={colors.primary} stopOpacity="0.5" />
-                          <stop offset="100%" stopColor={colors.primary} />
-                        </linearGradient>
-                      </defs>
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
-                      <span className="text-2xl" style={{ filter: `drop-shadow(0 0 8px ${colors.glow})` }}>{trait.emoji}</span>
-                      <span className="text-[15px] font-light tabular-nums text-white">{TRAIT_PROGRESS}%</span>
-                    </div>
-                  </div>
+                  <TraitAlignmentGlow trait={trait.label as typeof KNOWN_TRAITS[number]} score={score} />
                   <div className="min-w-0">
                     <p className="text-[9px] font-mono uppercase tracking-widest text-zinc-600 mb-1.5">Your desired trait</p>
-                    <p className="text-sm font-medium mb-2" style={{ color: colors.primary }}>{trait.label}</p>
-                    <p className="text-xs text-zinc-500 leading-relaxed">{trait.subtitle}</p>
+                    <p className="text-sm font-medium mb-2 text-white">{trait.label}</p>
+                    <p className="text-xs text-zinc-500 leading-relaxed">{feelingStatement}</p>
                   </div>
                 </div>
               </div>

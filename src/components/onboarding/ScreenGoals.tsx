@@ -17,16 +17,15 @@ export const GOALS: { id: Goal; label: string; emoji: string; glowPos: React.CSS
   { id: 'build_endurance', label: 'Build endurance', emoji: '💪', glowPos: { top: '5%', right: '5%' } },
   { id: 'improve_clarity', label: 'Improve clarity', emoji: '🎯', glowPos: { top: '45%', left: '0%' } },
   { id: 'own_my_voice', label: 'Own my voice', emoji: '🎤', glowPos: { top: '45%', right: '0%' } },
-  { id: 'calm_my_nerves', label: 'Calm my nerves', emoji: '🧘', glowPos: { bottom: '5%', left: '5%' } },
-  { id: 'sound_confident', label: 'Sound more confident', emoji: '✨', glowPos: { bottom: '5%', right: '5%' } },
+  { id: 'build_routine', label: 'Build routine', emoji: '🧘', glowPos: { bottom: '5%', left: '5%' } },
 ];
 
 export default function ScreenGoals({ value, onChange, onNext, onBack, step, totalSteps }: Props) {
   const toggle = (goal: Goal) => {
-    if (value.includes(goal)) {
-      onChange(value.filter(g => g !== goal));
-    } else if (value.length < 3) {
-      onChange([...value, goal]);
+    if (value[0] === goal) {
+      onChange([]);
+    } else {
+      onChange([goal]);
     }
   };
 
@@ -88,10 +87,7 @@ export default function ScreenGoals({ value, onChange, onNext, onBack, step, tot
             What brings you here?
           </h1>
           <p className="text-xs text-zinc-500">
-            Select everything that applies — you can have more than one goal.
-          </p>
-          <p className="text-[10px] text-zinc-600 mt-1">
-            Select up to 3.
+            Select the goal that matters most to you right now.
           </p>
         </div>
 
@@ -163,8 +159,8 @@ export default function ScreenGoals({ value, onChange, onNext, onBack, step, tot
             onClick={onNext}
             disabled={value.length === 0}
             className={`flex items-center justify-center gap-1.5 h-12 px-6 rounded-xl transition-all duration-300 group ${value.length > 0
-                ? 'bg-gradient-to-r from-[#17A9C9]/25 to-[#17A9C9]/10 hover:from-[#17A9C9]/35 hover:to-[#17A9C9]/15 border border-[#17A9C9]/60 hover:border-[#17A9C9]/80 shadow-[0_0_20px_rgba(23,169,201,0.12)] cursor-pointer'
-                : 'bg-zinc-900/40 border border-zinc-800/80 cursor-not-allowed opacity-80'
+              ? 'bg-gradient-to-r from-[#17A9C9]/25 to-[#17A9C9]/10 hover:from-[#17A9C9]/35 hover:to-[#17A9C9]/15 border border-[#17A9C9]/60 hover:border-[#17A9C9]/80 shadow-[0_0_20px_rgba(23,169,201,0.12)] cursor-pointer'
+              : 'bg-zinc-900/40 border border-zinc-800/80 cursor-not-allowed opacity-80'
               }`}
           >
             <span className={`text-[12px] tracking-widest uppercase font-medium transition-colors duration-300 ${value.length > 0 ? 'text-cyan-300 group-hover:text-[#21e8ff]' : 'text-zinc-600 font-light'

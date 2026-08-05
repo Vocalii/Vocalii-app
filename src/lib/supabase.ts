@@ -13,6 +13,7 @@ export type Database = {
           goals: string[];
           symptoms: string[];
           desired_voice_traits: string[];
+          voice_statement: string | null;
           voice_barrier: string | null;
           voice_identity: string | null;
           onboarding_complete: boolean;
@@ -36,6 +37,7 @@ export type Database = {
           goals?: string[];
           symptoms?: string[];
           desired_voice_traits?: string[];
+          voice_statement?: string | null;
           voice_barrier?: string | null;
           voice_identity?: string | null;
           onboarding_complete?: boolean;
@@ -57,6 +59,7 @@ export type Database = {
           goals?: string[];
           symptoms?: string[];
           desired_voice_traits?: string[];
+          voice_statement?: string | null;
           voice_barrier?: string | null;
           voice_identity?: string | null;
           onboarding_complete?: boolean;
@@ -101,7 +104,9 @@ export type Database = {
           date: string;
           vocal_effort: number;
           voice_confidence: number | null;
+          voice_demand_level: number | null;
           symptoms: string[];
+          notes: string;
           created_at: string;
         };
         Insert: {
@@ -109,12 +114,16 @@ export type Database = {
           date: string;
           vocal_effort: number;
           voice_confidence?: number | null;
+          voice_demand_level?: number | null;
           symptoms?: string[];
+          notes?: string;
         };
         Update: {
           vocal_effort?: number;
           voice_confidence?: number | null;
+          voice_demand_level?: number | null;
           symptoms?: string[];
+          notes?: string;
         };
         Relationships: [];
       };
@@ -124,15 +133,21 @@ export type Database = {
           user_id: string;
           date: string;
           ritual_id: string;
+          feeling_rating: number | null;
+          difficulty_rating: number | null;
           created_at: string;
         };
         Insert: {
           user_id: string;
           date: string;
           ritual_id: string;
+          feeling_rating?: number | null;
+          difficulty_rating?: number | null;
         };
         Update: {
           ritual_id?: string;
+          feeling_rating?: number | null;
+          difficulty_rating?: number | null;
         };
         Relationships: [];
       };
@@ -205,6 +220,10 @@ export type Database = {
           date: string;
           time: string | null;
           location: string | null;
+          prep_days_before: number | null;
+          tailored_ritual_ids: string[];
+          ai_insight: string | null;
+          chat_transcript: { role: 'user' | 'assistant'; content: string }[];
           created_at: string;
         };
         Insert: {
@@ -213,12 +232,20 @@ export type Database = {
           date: string;
           time?: string | null;
           location?: string | null;
+          prep_days_before?: number | null;
+          tailored_ritual_ids?: string[];
+          ai_insight?: string | null;
+          chat_transcript?: { role: 'user' | 'assistant'; content: string }[];
         };
         Update: {
           title?: string;
           date?: string;
           time?: string | null;
           location?: string | null;
+          prep_days_before?: number | null;
+          tailored_ritual_ids?: string[];
+          ai_insight?: string | null;
+          chat_transcript?: { role: 'user' | 'assistant'; content: string }[];
         };
         Relationships: [];
       };
@@ -241,6 +268,81 @@ export type Database = {
         };
         Update: {
           completed?: boolean;
+        };
+        Relationships: [];
+      };
+      goal_progress_snapshots: {
+        Row: {
+          id: string;
+          user_id: string;
+          date: string;
+          goal: string;
+          status: string;
+          rule_version: string;
+          primary_value: number | null;
+          primary_value_prior: number | null;
+          observations_count: number | null;
+          safety_triggered: boolean;
+          details: Record<string, unknown>;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          date: string;
+          goal: string;
+          status: string;
+          rule_version: string;
+          primary_value?: number | null;
+          primary_value_prior?: number | null;
+          observations_count?: number | null;
+          safety_triggered?: boolean;
+          details?: Record<string, unknown>;
+        };
+        Update: {
+          status?: string;
+          rule_version?: string;
+          primary_value?: number | null;
+          primary_value_prior?: number | null;
+          observations_count?: number | null;
+          safety_triggered?: boolean;
+          details?: Record<string, unknown>;
+        };
+        Relationships: [];
+      };
+      weekly_checkins: {
+        Row: {
+          id: string;
+          user_id: string;
+          week_start: string;
+          goal_id: string;
+          goal_question_1: number | null;
+          goal_question_2: number | null;
+          trait: string;
+          trait_question_1: number | null;
+          trait_question_2: number | null;
+          voice_confidence: number | null;
+          reflection: string | null;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          week_start: string;
+          goal_id: string;
+          goal_question_1?: number | null;
+          goal_question_2?: number | null;
+          trait: string;
+          trait_question_1?: number | null;
+          trait_question_2?: number | null;
+          voice_confidence?: number | null;
+          reflection?: string | null;
+        };
+        Update: {
+          goal_question_1?: number | null;
+          goal_question_2?: number | null;
+          trait_question_1?: number | null;
+          trait_question_2?: number | null;
+          voice_confidence?: number | null;
+          reflection?: string | null;
         };
         Relationships: [];
       };

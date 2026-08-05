@@ -65,7 +65,7 @@ export interface TodoItem {
 export interface Ritual {
   id: string;
   name: string;
-  category: 'Warm-up' | 'Calibrate' | 'Relief' | 'Resonance' | 'Hydration';
+  category: 'Ground' | 'Breathe' | 'Warm Up' | 'Release' | 'Resonate' | 'Build';
   duration: string;
   difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
   description: string;

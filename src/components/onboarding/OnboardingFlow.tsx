@@ -27,6 +27,7 @@ export default function OnboardingFlow({ onComplete, onBypass, skipAuth = false,
     role: null,
     experienceLevel: null,
     desiredVoiceTraits: [],
+    voiceStatement: '',
     voiceIdentity: null,
     customIdentity: '',
     goals: [],
@@ -85,6 +86,8 @@ export default function OnboardingFlow({ onComplete, onBypass, skipAuth = false,
       <ScreenVoiceTraits
         desiredTraits={data.desiredVoiceTraits}
         onChangeDesiredTraits={(desiredVoiceTraits) => setData(d => ({ ...d, desiredVoiceTraits }))}
+        voiceStatement={data.voiceStatement}
+        onChangeVoiceStatement={(voiceStatement) => setData(d => ({ ...d, voiceStatement }))}
         onNext={next}
         onBack={back}
         step={profileStep}

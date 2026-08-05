@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from './lib/supabase';
 import { postCheckInTrigger } from './lib/notificationTriggers';
 import OnboardingFlow from './components/onboarding/OnboardingFlow';
@@ -6,7 +7,7 @@ import { OnboardingData } from './types/onboarding';
 import Header, { AppNotification } from './components/Header';
 import HeroSection from './components/HeroSection';
 import WeatherWidget from './components/WeatherWidget';
-import BaselineCard from './components/BaselineCard';
+import GoalProgressCard from './components/GoalProgressCard';
 import BusyWidget from './components/BusyWidget';
 import AcousticWidget from './components/AcousticWidget';
 import InteractiveMap from './components/VoiceHealthStatus';
@@ -16,6 +17,9 @@ import RitualsPage, { type HabitCheckEntry } from './components/RitualsPage';
 import ReportsPage from './components/ReportsPage';
 import UpcomingEventsCard, { type VocalEvent } from './components/UpcomingEventsCard';
 import WeeklyReportPage from './components/WeeklyReportPage';
+import WeeklyCheckInPage from './components/WeeklyCheckInPage';
+import WeeklyReportLoadingScreen from './components/WeeklyReportLoadingScreen';
+import { getReflectionWeekStart } from './lib/weeklyCheckin';
 import ProfilePage, { type ProfileUpdates } from './components/ProfilePage';
 import { DESTINATIONS } from './data';
 import { Destination, Attraction, Message, Ritual } from './types';
@@ -23,7 +27,7 @@ import { VocalReport, Role, ExperienceLevel, Goal, VoiceBarrier, HabitPair } fro
 import { type BaselineMetrics } from './components/BaselineFlow';
 import { EXERCISE_RITUALS } from './ritualsData';
 
-const DAILY_RITUAL_IDS = ['laryngeal-massage', 'humming-sirens', 'hydration-honey-cycle'];
+const DEFAULT_DAILY_RITUAL_IDS = ['body-scan-grounding-reset', 'diaphragmatic-breathing-training', 'find-your-buzz'];
 import { X, Sparkles, Shield, Bookmark, Terminal, HelpCircle, ArrowRight } from 'lucide-react';
 
 const DESTINATION_THEMES: Record<string, {
@@ -109,13 +113,27 @@ function mapReport(r: {
   };
 }
 
-function mapEvent(r: { id: string; title: string; date: string; time: string | null; location: string | null }): VocalEvent {
+function mapEvent(r: {
+  id: string;
+  title: string;
+  date: string;
+  time: string | null;
+  location: string | null;
+  prep_days_before: number | null;
+  tailored_ritual_ids: string[];
+  ai_insight: string | null;
+  chat_transcript: { role: 'user' | 'assistant'; content: string }[];
+}): VocalEvent {
   return {
     id: r.id,
     title: r.title,
     date: r.date,
     time: r.time ?? undefined,
     location: r.location ?? undefined,
+    prepDaysBefore: r.prep_days_before ?? undefined,
+    tailoredRitualIds: r.tailored_ritual_ids?.length ? r.tailored_ritual_ids : undefined,
+    aiInsight: r.ai_insight ?? undefined,
+    chatTranscript: r.chat_transcript?.length ? r.chat_transcript : undefined,
   };
 }
 
@@ -134,8 +152,11 @@ export default function App() {
   const [userRole, setUserRole] = useState('');
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel | null>(null);
   const [desiredVoiceTraits, setDesiredVoiceTraits] = useState<string[]>([]);
+  const [voiceStatement, setVoiceStatement] = useState('');
   const [goals, setGoals] = useState<Goal[]>([]);
   const [voiceBarrier, setVoiceBarrier] = useState<VoiceBarrier | null>(null);
+  const [weeklyCheckinDue, setWeeklyCheckinDue] = useState(false);
+  const [reflectionWeekStart, setReflectionWeekStart] = useState('');
   const [userHabits, setUserHabits] = useState<{ daily: string; vocal: string }[]>([]);
   const [habitCompletions, setHabitCompletions] = useState<{ date: string; daily_habit: string; vocal_habit: string; completed: boolean }[]>([]);
   const [reports, setReports] = useState<VocalReport[]>([]);
@@ -144,6 +165,8 @@ export default function App() {
   const [checkInDone, setCheckInDone] = useState(false);
   const [todayVocalEffort, setTodayVocalEffort] = useState<number | null>(null);
   const [todayVocalConfidence, setTodayVocalConfidence] = useState<number | null>(null);
+  const [todayVoiceDemandLevel, setTodayVoiceDemandLevel] = useState<number | null>(null);
+  const [baselineConfidenceAvg, setBaselineConfidenceAvg] = useState<number | null>(null);
   const [todaySymptoms, setTodaySymptoms] = useState<string[]>([]);
   const [baselineScore, setBaselineScore] = useState<number | null>(null);
   const [baselineStabilityPct, setBaselineStabilityPct] = useState<number | null>(null);
@@ -190,6 +213,8 @@ export default function App() {
       { data: reportsData },
       { data: eventsData },
       { data: habitCompletionsData },
+      { data: confidenceHistory },
+      { data: weeklyCheckinRow },
     ] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
       supabase.from('habit_pairs').select('*').eq('user_id', uid).order('sort_order'),
@@ -198,7 +223,12 @@ export default function App() {
       supabase.from('vocal_reports').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
       supabase.from('events').select('*').eq('user_id', uid).order('date'),
       supabase.from('habit_completions').select('*').eq('user_id', uid).gte('date', sevenDaysAgoStr),
+      supabase.from('daily_checkins').select('voice_confidence').eq('user_id', uid).not('voice_confidence', 'is', null).neq('date', today),
+      supabase.from('weekly_checkins').select('id').eq('user_id', uid).eq('week_start', getReflectionWeekStart()).maybeSingle(),
     ]);
+
+    setReflectionWeekStart(getReflectionWeekStart());
+    setWeeklyCheckinDue(!weeklyCheckinRow);
 
     if (profile?.onboarding_complete) {
       setUserName(profile.first_name);
@@ -206,6 +236,7 @@ export default function App() {
       setUserRole(profile.role || '');
       setExperienceLevel((profile.experience_level as ExperienceLevel | null) ?? null);
       setDesiredVoiceTraits(profile.desired_voice_traits ?? []);
+      setVoiceStatement(profile.voice_statement ?? '');
       setGoals((profile.goals as Goal[] | null) ?? []);
       setVoiceBarrier((profile.voice_barrier as VoiceBarrier | null) ?? null);
       setBaselineScore(profile.baseline_score ?? null);
@@ -221,12 +252,17 @@ export default function App() {
         setCheckInDone(true);
         setTodayVocalEffort(checkin.vocal_effort);
         setTodayVocalConfidence(checkin.voice_confidence ?? null);
+        setTodayVoiceDemandLevel(checkin.voice_demand_level ?? null);
         setTodaySymptoms(checkin.symptoms ?? []);
       }
       setCompletedRitualIds(completions?.map(c => c.ritual_id) ?? []);
       setReports(reportsData?.map(mapReport) ?? []);
       setEvents(eventsData?.map(mapEvent) ?? []);
       setHabitCompletions(habitCompletionsData ?? []);
+      if (confidenceHistory && confidenceHistory.length > 0) {
+        const sum = confidenceHistory.reduce((acc, c) => acc + (c.voice_confidence ?? 0), 0);
+        setBaselineConfidenceAvg(sum / confidenceHistory.length);
+      }
       setOnboardingDone(true);
     } else if (profile) {
       // Signed up but didn't finish onboarding — pre-fill name for resume
@@ -242,8 +278,11 @@ export default function App() {
     setUserRole('');
     setExperienceLevel(null);
     setDesiredVoiceTraits([]);
+    setVoiceStatement('');
     setGoals([]);
     setVoiceBarrier(null);
+    setWeeklyCheckinDue(false);
+    setReflectionWeekStart('');
     setUserHabits([]);
     setHabitCompletions([]);
     setReports([]);
@@ -252,6 +291,7 @@ export default function App() {
     setCheckInDone(false);
     setTodayVocalEffort(null);
     setTodayVocalConfidence(null);
+    setTodayVoiceDemandLevel(null);
     setTodaySymptoms([]);
     setBaselineScore(null);
     setBaselineStabilityPct(null);
@@ -260,6 +300,7 @@ export default function App() {
     setBaselineLoudnessDb(null);
     setBaselinePitchHz(null);
     setBaselinePitchRangeHz(null);
+    setBaselineConfidenceAvg(null);
     setPendingProfile(null);
   };
 
@@ -319,6 +360,7 @@ export default function App() {
       setUserRole(data.role || '');
       setExperienceLevel(data.experienceLevel);
       setDesiredVoiceTraits(data.desiredVoiceTraits);
+      setVoiceStatement(data.voiceStatement);
       setGoals(data.goals);
       setVoiceBarrier(data.voiceBarrier);
       setUserHabits(data.habitPairs);
@@ -337,6 +379,7 @@ export default function App() {
       goals: data.goals,
       symptoms: data.symptoms,
       desired_voice_traits: data.desiredVoiceTraits,
+      voice_statement: data.voiceStatement || null,
       voice_barrier: data.voiceBarrier,
       voice_identity: data.voiceIdentity ?? null,
       onboarding_complete: true,
@@ -380,6 +423,7 @@ export default function App() {
     setUserRole(data.role || '');
     setExperienceLevel(data.experienceLevel);
     setDesiredVoiceTraits(data.desiredVoiceTraits);
+    setVoiceStatement(data.voiceStatement);
     setGoals(data.goals);
     setVoiceBarrier(data.voiceBarrier);
     setUserHabits(data.habitPairs);
@@ -393,6 +437,7 @@ export default function App() {
     if (updates.role !== undefined) setUserRole(updates.role ?? '');
     if (updates.experienceLevel !== undefined) setExperienceLevel(updates.experienceLevel);
     if (updates.desiredVoiceTraits !== undefined) setDesiredVoiceTraits(updates.desiredVoiceTraits);
+    if (updates.voiceStatement !== undefined) setVoiceStatement(updates.voiceStatement);
     if (updates.goals !== undefined) setGoals(updates.goals);
     if (updates.voiceBarrier !== undefined) setVoiceBarrier(updates.voiceBarrier);
     if (updates.habitPairs !== undefined) setUserHabits(updates.habitPairs);
@@ -419,6 +464,7 @@ export default function App() {
       role?: string | null;
       experience_level?: string | null;
       desired_voice_traits?: string[];
+      voice_statement?: string | null;
       goals?: string[];
       voice_barrier?: string | null;
     } = {};
@@ -427,12 +473,18 @@ export default function App() {
     if (updates.role !== undefined) profileFields.role = updates.role;
     if (updates.experienceLevel !== undefined) profileFields.experience_level = updates.experienceLevel;
     if (updates.desiredVoiceTraits !== undefined) profileFields.desired_voice_traits = updates.desiredVoiceTraits;
+    if (updates.voiceStatement !== undefined) profileFields.voice_statement = updates.voiceStatement || null;
     if (updates.goals !== undefined) profileFields.goals = updates.goals;
     if (updates.voiceBarrier !== undefined) profileFields.voice_barrier = updates.voiceBarrier;
 
     if (Object.keys(profileFields).length > 0) {
       await supabase.from('profiles').update(profileFields).eq('id', userId);
     }
+  };
+
+  const handleChangePassword = async (newPassword: string): Promise<string | null> => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    return error ? error.message : null;
   };
 
   // ─── Reports ────────────────────────────────────────────────────────────────
@@ -483,10 +535,15 @@ export default function App() {
       date: event.date,
       time: event.time ?? null,
       location: event.location ?? null,
+      prep_days_before: event.prepDaysBefore ?? null,
+      tailored_ritual_ids: event.tailoredRitualIds ?? [],
+      ai_insight: event.aiInsight ?? null,
+      chat_transcript: event.chatTranscript ?? [],
     }).select().single();
 
     if (row) {
       setEvents(prev => [...prev, mapEvent(row)]);
+      addNotification('Event created', `"${row.title}" was added to your upcoming events.`);
     }
   };
 
@@ -497,7 +554,7 @@ export default function App() {
       time: event.time ?? null,
       location: event.location ?? null,
     }).eq('id', id);
-    setEvents(prev => prev.map(e => e.id === id ? { id, ...event } : e));
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, ...event, id } : e));
   };
 
   const handleDeleteEvent = async (id: string) => {
@@ -539,13 +596,13 @@ export default function App() {
   };
 
   // ─── Daily check-in ─────────────────────────────────────────────────────────
-  const handleCompleteCheckIn = async (vocalEffort: number, confidence: number, symptoms: string[], habitChecks: HabitCheckEntry[]) => {
+  const handleCompleteCheckIn = async (vocalEffort: number, confidence: number, symptoms: string[], habitChecks: HabitCheckEntry[], demandLevel: number, notes: string) => {
     const roundedEffort = Math.round(vocalEffort);
     const today = new Date().toISOString().slice(0, 10);
 
     if (userId) {
       await supabase.from('daily_checkins').upsert(
-        { user_id: userId, date: today, vocal_effort: roundedEffort, voice_confidence: confidence, symptoms },
+        { user_id: userId, date: today, vocal_effort: roundedEffort, voice_confidence: confidence, voice_demand_level: demandLevel, symptoms, notes },
         { onConflict: 'user_id,date' }
       );
 
@@ -566,6 +623,7 @@ export default function App() {
     setCheckInDone(true);
     setTodayVocalEffort(roundedEffort);
     setTodayVocalConfidence(confidence);
+    setTodayVoiceDemandLevel(demandLevel);
     setTodaySymptoms(symptoms);
     if (habitChecks.length > 0) {
       setHabitCompletions(prev => [
@@ -576,14 +634,34 @@ export default function App() {
     addNotification('Daily check-in complete', postCheckInTrigger(userId ?? 'preview', roundedEffort, symptoms).body);
   };
 
+  // Dev/testing helper — clears today's check-in so the flow can be re-run same-day
+  const handleResetCheckIn = async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (userId) {
+      await supabase.from('daily_checkins').delete().eq('user_id', userId).eq('date', today);
+    }
+    setCheckInDone(false);
+    setTodayVocalEffort(null);
+    setTodayVocalConfidence(null);
+    setTodayVoiceDemandLevel(null);
+    setTodaySymptoms([]);
+  };
+
+  const handleResetWeeklyCheckIn = async () => {
+    if (userId) {
+      await supabase.from('weekly_checkins').delete().eq('user_id', userId).eq('week_start', reflectionWeekStart);
+    }
+    setWeeklyCheckinDue(true);
+  };
+
   // ─── Ritual completions ─────────────────────────────────────────────────────
-  const handleCompleteRitual = async (ritualId: string) => {
+  const handleCompleteRitual = async (ritualId: string, feelingRating: number | null, difficultyRating: number | null) => {
     if (completedRitualIds.includes(ritualId)) return;
     const today = new Date().toISOString().slice(0, 10);
 
     if (userId) {
       await supabase.from('ritual_completions').upsert(
-        { user_id: userId, date: today, ritual_id: ritualId },
+        { user_id: userId, date: today, ritual_id: ritualId, feeling_rating: feelingRating, difficulty_rating: difficultyRating },
         { onConflict: 'user_id,date,ritual_id' }
       );
     }
@@ -599,7 +677,36 @@ export default function App() {
     setCompletedRitualIds([]);
   };
 
-  const dailyRituals = DAILY_RITUAL_IDS
+  const activePrepEvent = events
+    .filter((e): e is VocalEvent & { prepDaysBefore: number; tailoredRitualIds: string[] } =>
+      !!e.prepDaysBefore && !!e.tailoredRitualIds?.length)
+    .filter(e => {
+      const eventDate = new Date(e.date);
+      const prepStart = new Date(e.date);
+      prepStart.setDate(prepStart.getDate() - e.prepDaysBefore);
+      const today = new Date();
+      return today >= prepStart && today <= eventDate;
+    })
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0] ?? null;
+
+  const dailyRitualIds = activePrepEvent ? activePrepEvent.tailoredRitualIds : DEFAULT_DAILY_RITUAL_IDS;
+
+  const activePrepEventSummary = activePrepEvent
+    ? {
+        title: activePrepEvent.title,
+        daysLeft: Math.max(0, Math.ceil((new Date(activePrepEvent.date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))),
+      }
+    : null;
+
+  useEffect(() => {
+    if (!activePrepEvent) return;
+    const key = 'vocalii_prep_notified_event_id';
+    if (localStorage.getItem(key) === activePrepEvent.id) return;
+    localStorage.setItem(key, activePrepEvent.id);
+    addNotification('Preparation mode started', `You're now in prep mode for "${activePrepEvent.title}" — your daily rituals have been tailored for it.`);
+  }, [activePrepEvent?.id]);
+
+  const dailyRituals = dailyRitualIds
     .map(id => EXERCISE_RITUALS.find(r => r.id === id))
     .filter(Boolean) as Ritual[];
 
@@ -623,7 +730,9 @@ export default function App() {
   const [favoritesModalOpen, setFavoritesModalOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [favoritesList, setFavoritesList] = useState<string[]>(['santorini']);
-  const [currentView, setCurrentView] = useState<'home' | 'rituals' | 'reports' | 'weekly-report' | 'profile'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'rituals' | 'reports' | 'weekly-report' | 'weekly-checkin' | 'profile'>('home');
+  const [showWeeklyReportLoading, setShowWeeklyReportLoading] = useState(false);
+  const [autoStartRituals, setAutoStartRituals] = useState(false);
 
   useEffect(() => {
     if (activeDestination) setActiveAttraction(activeDestination.attractions[0]);
@@ -731,7 +840,7 @@ export default function App() {
         }}
         onClearHistory={clearChatHistory}
         onOpenFavorites={() => setFavoritesModalOpen(true)}
-        currentView={currentView === 'weekly-report' || currentView === 'profile' ? 'home' : currentView}
+        currentView={currentView === 'weekly-report' || currentView === 'weekly-checkin' || currentView === 'profile' ? 'home' : currentView}
         setCurrentView={(view) => setCurrentView(view)}
         notifications={notifications}
         onClearNotifications={clearNotifications}
@@ -740,8 +849,40 @@ export default function App() {
       />
 
       {currentView === 'weekly-report' && (
-        <WeeklyReportPage onBack={() => setCurrentView('home')} habitPairs={userHabits} habitCompletions={habitCompletions} />
+        <WeeklyReportPage
+          onBack={() => setCurrentView('home')}
+          habitPairs={userHabits}
+          habitCompletions={habitCompletions}
+          userId={userId}
+          goal={goals[0] ?? null}
+          dailyRitualIds={dailyRitualIds}
+          onResetWeeklyCheckIn={async () => {
+            await handleResetWeeklyCheckIn();
+            setCurrentView('weekly-checkin');
+          }}
+        />
       )}
+
+      {currentView === 'weekly-checkin' && (
+        <WeeklyCheckInPage
+          onBack={() => setCurrentView('home')}
+          userId={userId}
+          goal={goals[0] ?? null}
+          trait={desiredVoiceTraits[0] ?? null}
+          weekStart={reflectionWeekStart}
+          onSubmitted={() => {
+            setWeeklyCheckinDue(false);
+            setCurrentView('weekly-report');
+            setShowWeeklyReportLoading(true);
+          }}
+        />
+      )}
+
+      <AnimatePresence>
+        {showWeeklyReportLoading && (
+          <WeeklyReportLoadingScreen onDone={() => setShowWeeklyReportLoading(false)} />
+        )}
+      </AnimatePresence>
 
       {currentView === 'profile' && (
         <ProfilePage
@@ -752,24 +893,30 @@ export default function App() {
           role={(userRole || null) as Role | null}
           experienceLevel={experienceLevel}
           desiredVoiceTraits={desiredVoiceTraits}
+          voiceStatement={voiceStatement}
           goals={goals}
           voiceBarrier={voiceBarrier}
           habitPairs={userHabits}
           onSave={handleUpdateProfile}
+          onChangePassword={handleChangePassword}
         />
       )}
 
-      <div className={`pt-[88px] max-w-7xl mx-auto transition-all duration-300 px-6 md:px-12 flex flex-col gap-6 ${currentView === 'weekly-report' || currentView === 'profile' ? 'hidden' : ''}`}>
+      <div className={`pt-[88px] max-w-7xl mx-auto transition-all duration-300 px-6 md:px-12 flex flex-col gap-6 ${currentView === 'weekly-report' || currentView === 'weekly-checkin' || currentView === 'profile' ? 'hidden' : ''}`}>
 
         {currentView === 'rituals' ? (
           <RitualsPage
-            dailyRitualIds={DAILY_RITUAL_IDS}
+            dailyRitualIds={dailyRitualIds}
+            activePrepEvent={activePrepEventSummary}
             completedRitualIds={completedRitualIds}
             onCompleteRitual={handleCompleteRitual}
             onRestartRoutine={handleRestartRoutine}
             checkInDone={checkInDone}
             habitPairs={userHabits}
             onCompleteCheckIn={handleCompleteCheckIn}
+            onResetCheckIn={handleResetCheckIn}
+            autoStart={autoStartRituals}
+            onAutoStartConsumed={() => setAutoStartRituals(false)}
           />
         ) : currentView === 'reports' ? (
           <ReportsPage
@@ -803,6 +950,8 @@ export default function App() {
                 onNavigateWeeklyReport={() => setCurrentView('weekly-report')}
                 userName={userName}
                 userRole={userRole}
+                desiredVoiceTraits={desiredVoiceTraits}
+                voiceStatement={voiceStatement}
               />
 
               <div className="flex flex-col gap-4">
@@ -813,33 +962,25 @@ export default function App() {
                   setActiveAttraction={setActiveAttraction}
                   vocalData={{
                     effortScore: todayVocalEffort,
-                    confidenceScore: todayVocalConfidence,
+                    demandLevel: todayVoiceDemandLevel,
                     checkInDone,
                     symptoms: todaySymptoms,
                   }}
+                  dailyRitualIds={dailyRitualIds}
+                  completedRitualIds={completedRitualIds}
+                  isPrepActive={!!activePrepEvent}
+                  onNavigateRituals={() => { setAutoStartRituals(true); setCurrentView('rituals'); }}
                 />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <WeatherWidget destination={activeDestination} vocalEffort={todayVocalEffort} />
-                  <BaselineCard
-                    baseline={{
-                      stabilityPct: baselineStabilityPct,
-                      resonanceScore: baselineResonanceScore,
-                      clarityPct: baselineClarityPct,
-                      loudnessDb: baselineLoudnessDb,
-                      pitchHz: baselinePitchHz,
-                      pitchRangeHz: baselinePitchRangeHz,
-                    }}
-                    recent={{
-                      stabilityPct: reports.find(r => r.stabilityPct != null)?.stabilityPct ?? null,
-                      resonanceScore: reports.find(r => r.resonanceScore != null)?.resonanceScore ?? null,
-                      clarityPct: reports.find(r => r.clarityPct != null)?.clarityPct ?? null,
-                      loudnessDb: reports.find(r => r.loudnessDb != null)?.loudnessDb ?? null,
-                      pitchHz: reports.find(r => r.pitchHz != null)?.pitchHz ?? null,
-                      pitchRangeHz: reports.find(r => r.pitchRangeHz != null)?.pitchRangeHz ?? null,
-                    }}
+                  <WeatherWidget destination={activeDestination} confidence={todayVocalConfidence} baselineConfidence={baselineConfidenceAvg} />
+                  <GoalProgressCard
+                    userId={userId}
+                    goal={goals[0] ?? null}
+                    dailyRitualIds={dailyRitualIds}
+                    habitPairsCount={userHabits.length}
                   />
                 </div>
-                <DashboardConsistencyChart userId={userId} dailyRitualIds={DAILY_RITUAL_IDS} />
+                <DashboardConsistencyChart userId={userId} dailyRitualIds={dailyRitualIds} />
               </div>
             </div>
 
@@ -848,29 +989,49 @@ export default function App() {
               <div className="flex flex-col gap-2.5">
                 <h3 className="text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-400 px-1 pt-1">Your Habits</h3>
                 <div className="h-auto">
-                  <HabitCard habits={userHabits} />
+                  <HabitCard habits={userHabits} onSave={(pairs) => handleUpdateProfile({ habitPairs: pairs })} />
                 </div>
               </div>
 
               <button
-                onClick={() => setCurrentView('weekly-report')}
+                onClick={() => setCurrentView(weeklyCheckinDue ? 'weekly-checkin' : 'weekly-report')}
                 className="w-full text-left group cursor-pointer"
               >
-                <div
-                  className="relative overflow-hidden rounded-[24px] px-5 py-4 border transition-all duration-300 group-hover:border-[#17A9C9]/40"
-                  style={{
+                <motion.div
+                  className="relative overflow-hidden rounded-[24px] px-5 py-4 border transition-colors duration-300 group-hover:border-[#17A9C9]/40"
+                  style={weeklyCheckinDue ? {
+                    background: 'linear-gradient(135deg, rgba(23,169,201,0.16) 0%, rgba(23,169,201,0.05) 100%)',
+                    borderColor: 'rgba(33,232,255,0.35)',
+                  } : {
                     background: 'linear-gradient(135deg, rgba(23,169,201,0.07) 0%, rgba(23,169,201,0.02) 100%)',
                     borderColor: 'rgba(33,232,255,0.15)',
                     boxShadow: '0 0 28px rgba(23,169,201,0.05)',
                   }}
+                  animate={weeklyCheckinDue ? {
+                    y: [0, -1.5, 0],
+                    boxShadow: [
+                      '0 0 20px rgba(33,232,255,0.18)',
+                      '0 0 36px rgba(33,232,255,0.32)',
+                      '0 0 20px rgba(33,232,255,0.18)',
+                    ],
+                  } : undefined}
+                  transition={weeklyCheckinDue ? { duration: 3, repeat: Infinity, ease: 'easeInOut' } : undefined}
                 >
-                  <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#21e8ff]/15 to-transparent" />
+                  <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent to-transparent" style={{ background: `linear-gradient(90deg, transparent, rgba(33,232,255,${weeklyCheckinDue ? 0.4 : 0.15}), transparent)` }} />
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[9px] font-mono uppercase tracking-widest text-[#21e8ff]/60 mb-1">Jun 23 – Jun 29</p>
-                      <h4 className="text-[13px] font-medium text-zinc-200 group-hover:text-white transition-colors duration-200">Weekly Report</h4>
-                      <p className="text-[10px] text-zinc-500 mt-0.5">6/7 check-ins · 19/21 rituals</p>
-                    </div>
+                    {weeklyCheckinDue ? (
+                      <div>
+                        <p className="text-[9px] font-mono uppercase tracking-widest text-[#21e8ff]/60 mb-1">Due this week</p>
+                        <h4 className="text-[13px] font-medium text-zinc-200 group-hover:text-white transition-colors duration-200">Weekly Check-In</h4>
+                        <p className="text-[10px] text-zinc-500 mt-0.5">A few quick reflections on your voice</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-[9px] font-mono uppercase tracking-widest text-[#21e8ff]/60 mb-1">Jun 23 – Jun 29</p>
+                        <h4 className="text-[13px] font-medium text-zinc-200 group-hover:text-white transition-colors duration-200">Weekly Report</h4>
+                        <p className="text-[10px] text-zinc-500 mt-0.5">6/7 check-ins · 19/21 rituals</p>
+                      </div>
+                    )}
                     <div
                       className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-200 group-hover:scale-105"
                       style={{ background: 'rgba(33,232,255,0.1)', border: '1px solid rgba(33,232,255,0.2)' }}
@@ -878,7 +1039,7 @@ export default function App() {
                       <ArrowRight className="w-4 h-4 text-[#21e8ff]" />
                     </div>
                   </div>
-                </div>
+                </motion.div>
               </button>
 
               <UpcomingEventsCard

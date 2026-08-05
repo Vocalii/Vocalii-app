@@ -21,7 +21,7 @@ export interface VocalReport {
 export type Role = 'teacher' | 'trainer' | 'speaker' | 'executive' | 'creator' | 'singer' | 'therapy' | 'other';
 export type ExperienceLevel = 'beginner' | 'some_experience' | 'trained';
 export type VoiceIdentity = 'vocal_athlete' | 'confident_leader' | 'calm_commanding' | 'custom';
-export type Goal = 'reduce_strain' | 'build_endurance' | 'improve_clarity' | 'own_my_voice' | 'calm_my_nerves' | 'sound_confident';
+export type Goal = 'reduce_strain' | 'build_endurance' | 'improve_clarity' | 'own_my_voice' | 'build_routine' | 'calm_my_nerves' | 'sound_confident';
 export type Symptom = 'hoarseness' | 'fatigue' | 'pain' | 'dryness' | 'tension' | 'breathiness';
 export type VoiceBarrier = 'time_consistency' | 'confidence_identity' | 'physical_demands';
 
@@ -36,6 +36,7 @@ export interface OnboardingData {
   role: Role | null;
   experienceLevel: ExperienceLevel | null;
   desiredVoiceTraits: string[];
+  voiceStatement: string;
   voiceIdentity: VoiceIdentity | null;
   customIdentity: string;
   goals: Goal[];

@@ -25,11 +25,11 @@ function formatDelta(current: number, baseline: number | null | undefined, decim
 
 function CircleMetric({ value, unit, sub, label, accent, tooltip, delta }: { value: string; unit: string; sub: string; label: string; accent: string; tooltip?: string; delta?: MetricDelta | null }) {
   return (
-    <div className="flex flex-col items-center gap-2.5">
+    <div className="flex flex-col items-center gap-2.5 group">
       <motion.div
         whileHover={{ scale: 1.07 }}
         transition={{ type: 'spring', stiffness: 350, damping: 20 }}
-        className="w-[118px] h-[118px] rounded-full flex flex-col items-center justify-center gap-0.5 cursor-default relative group"
+        className="w-[118px] h-[118px] rounded-full flex flex-col items-center justify-center gap-0.5 cursor-default relative"
         style={{
           background: `radial-gradient(circle at 38% 32%, ${accent}22 0%, ${accent}08 100%)`,
           border: `1px solid ${accent}40`,
@@ -51,7 +51,7 @@ function CircleMetric({ value, unit, sub, label, accent, tooltip, delta }: { val
       </motion.div>
       <span className="text-[9px] font-mono text-zinc-500 tracking-widest uppercase">{label}</span>
       {delta && (
-        <span className="text-[9px] font-mono tabular-nums" style={{ color: delta.positive ? '#34d399' : '#fb7185' }}>
+        <span className="text-[9px] font-mono tabular-nums opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 ease-out" style={{ color: delta.positive ? '#34d399' : '#fb7185' }}>
           {delta.text} vs baseline
         </span>
       )}
@@ -457,9 +457,9 @@ export default function ReportsPage({
                 <button
                   onClick={() => { setEditNameValue(activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(true); }}
                   className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer opacity-40 hover:opacity-100 transition-opacity duration-200"
-                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255, 255, 255, 0.25)' }}
                 >
-                  <Pencil className="w-3 h-3 text-zinc-400" />
+                  <Pencil className="w-3 h-3 text-white-400" />
                 </button>
               </div>
             )}
@@ -538,81 +538,81 @@ export default function ReportsPage({
 
         {(activeReportDetail.pitchHz || activeReportDetail.resonanceScore !== undefined || activeReportDetail.clarityPct !== undefined
           || activeReportDetail.stabilityPct !== undefined || activeReportDetail.loudnessDb !== undefined) && (
-          <>
-            <div className="flex flex-wrap justify-start gap-5 mb-8 py-2">
-              {activeReportDetail.pitchHz && (
-                <CircleMetric
-                  value={`${Math.round(activeReportDetail.pitchHz)}`} unit="Hz"
-                  sub={noteFromHz(activeReportDetail.pitchHz)}
-                  label="Pitch" accent="#21e8ff"
-                  tooltip="The fundamental note your voice naturally sits at, detected via waveform autocorrelation."
-                  delta={formatDelta(activeReportDetail.pitchHz, baseline.pitchHz)}
-                />
-              )}
-              {activeReportDetail.pitchRangeHz && (
-                <CircleMetric
-                  value={`${Math.round(activeReportDetail.pitchRangeHz)}`} unit="Hz"
-                  sub={activeReportDetail.pitchRangeHz < 40 ? 'Narrow' : activeReportDetail.pitchRangeHz < 120 ? 'Moderate' : 'Wide'}
-                  label="Range" accent="#a78bfa"
-                  tooltip="How much your pitch varied. A wider range means more expressive, dynamic delivery."
-                  delta={formatDelta(activeReportDetail.pitchRangeHz, baseline.pitchRangeHz)}
-                />
-              )}
-              {activeReportDetail.resonanceScore !== undefined && (
-                <CircleMetric
-                  value={`${Math.round(activeReportDetail.resonanceScore)}`} unit="" sub="/ 100"
-                  label="Resonance" accent="#fbbf24"
-                  tooltip="Energy in the 1–4 kHz presence band. Higher = fuller, more projected sound."
-                  delta={formatDelta(activeReportDetail.resonanceScore, baseline.resonanceScore)}
-                />
-              )}
-              {activeReportDetail.clarityPct !== undefined && (
-                <CircleMetric
-                  value={`${Math.round(activeReportDetail.clarityPct)}`} unit="%" sub="clarity"
-                  label="Clarity" accent="#34d399"
-                  tooltip="Dominant frequency vs. total spectral noise. Higher = cleaner, more focused tone."
-                  delta={formatDelta(activeReportDetail.clarityPct, baseline.clarityPct)}
-                />
-              )}
-              {activeReportDetail.stabilityPct !== undefined && (
-                <CircleMetric
-                  value={`${Math.round(activeReportDetail.stabilityPct)}`} unit="%" sub="stability"
-                  label="Stability" accent="#22d3ee"
-                  tooltip="How steady your pitch held over the session. Higher = fewer wavers or breaks."
-                  delta={formatDelta(activeReportDetail.stabilityPct, baseline.stabilityPct)}
-                />
-              )}
-              {activeReportDetail.loudnessDb !== undefined && (
-                <CircleMetric
-                  value={`${Math.round(activeReportDetail.loudnessDb)}`} unit="dB" sub="loudness"
-                  label="Loudness" accent="#f472b6"
-                  tooltip="Average volume of the session, measured in decibels."
-                  delta={formatDelta(activeReportDetail.loudnessDb, baseline.loudnessDb)}
-                />
-              )}
-              {(() => {
-                const f = activeReportDetail.fatigueLevel;
-                const estimate = f <= 33 ? 'Low' : f <= 66 ? 'Moderate' : 'High';
-                const accent = f <= 33 ? '#22d3ee' : f <= 66 ? '#fbbf24' : '#fb7185';
-                return (
+            <>
+              <div className="flex flex-wrap justify-start gap-5 mb-8 py-2">
+                {activeReportDetail.pitchHz && (
                   <CircleMetric
-                    value={estimate} unit="" sub="fatigue"
-                    label="Energy" accent={accent}
-                    tooltip="Estimated from pitch jitter. Low jitter means your pitch held steady — less vocal strain."
+                    value={`${Math.round(activeReportDetail.pitchHz)}`} unit="Hz"
+                    sub={noteFromHz(activeReportDetail.pitchHz)}
+                    label="Pitch" accent="#21e8ff"
+                    tooltip="The fundamental note your voice naturally sits at, detected via waveform autocorrelation."
+                    delta={formatDelta(activeReportDetail.pitchHz, baseline.pitchHz)}
                   />
-                );
-              })()}
-            </div>
-
-            {activeReportDetail.insight && (
-              <div className="relative flex flex-col gap-3 py-7 px-6 mb-8">
-                <div className="absolute inset-0 rounded-3xl pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(23,169,201,0.1) 0%, rgba(33,232,255,0.04) 55%, transparent 100%)' }} />
-                <p className="text-[9px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.6)' }}>AI Insight</p>
-                <p className="text-[14px] font-light text-zinc-200 leading-relaxed">{activeReportDetail.insight}</p>
+                )}
+                {activeReportDetail.pitchRangeHz && (
+                  <CircleMetric
+                    value={`${Math.round(activeReportDetail.pitchRangeHz)}`} unit="Hz"
+                    sub={activeReportDetail.pitchRangeHz < 40 ? 'Narrow' : activeReportDetail.pitchRangeHz < 120 ? 'Moderate' : 'Wide'}
+                    label="Range" accent="#a78bfa"
+                    tooltip="How much your pitch varied. A wider range means more expressive, dynamic delivery."
+                    delta={formatDelta(activeReportDetail.pitchRangeHz, baseline.pitchRangeHz)}
+                  />
+                )}
+                {activeReportDetail.resonanceScore !== undefined && (
+                  <CircleMetric
+                    value={`${Math.round(activeReportDetail.resonanceScore)}`} unit="" sub="/ 100"
+                    label="Resonance" accent="#fbbf24"
+                    tooltip="Energy in the 1–4 kHz presence band. Higher = fuller, more projected sound."
+                    delta={formatDelta(activeReportDetail.resonanceScore, baseline.resonanceScore)}
+                  />
+                )}
+                {activeReportDetail.clarityPct !== undefined && (
+                  <CircleMetric
+                    value={`${Math.round(activeReportDetail.clarityPct)}`} unit="%" sub="clarity"
+                    label="Clarity" accent="#34d399"
+                    tooltip="Dominant frequency vs. total spectral noise. Higher = cleaner, more focused tone."
+                    delta={formatDelta(activeReportDetail.clarityPct, baseline.clarityPct)}
+                  />
+                )}
+                {activeReportDetail.stabilityPct !== undefined && (
+                  <CircleMetric
+                    value={`${Math.round(activeReportDetail.stabilityPct)}`} unit="%" sub="stability"
+                    label="Stability" accent="#22d3ee"
+                    tooltip="How steady your pitch held over the session. Higher = fewer wavers or breaks."
+                    delta={formatDelta(activeReportDetail.stabilityPct, baseline.stabilityPct)}
+                  />
+                )}
+                {activeReportDetail.loudnessDb !== undefined && (
+                  <CircleMetric
+                    value={`${Math.round(activeReportDetail.loudnessDb)}`} unit="dB" sub="loudness"
+                    label="Loudness" accent="#f472b6"
+                    tooltip="Average volume of the session, measured in decibels."
+                    delta={formatDelta(activeReportDetail.loudnessDb, baseline.loudnessDb)}
+                  />
+                )}
+                {(() => {
+                  const f = activeReportDetail.fatigueLevel;
+                  const estimate = f <= 33 ? 'Low' : f <= 66 ? 'Moderate' : 'High';
+                  const accent = f <= 33 ? '#22d3ee' : f <= 66 ? '#fbbf24' : '#fb7185';
+                  return (
+                    <CircleMetric
+                      value={estimate} unit="" sub="fatigue"
+                      label="Energy" accent={accent}
+                      tooltip="Estimated from pitch jitter. Low jitter means your pitch held steady — less vocal strain."
+                    />
+                  );
+                })()}
               </div>
-            )}
-          </>
-        )}
+
+              {activeReportDetail.insight && (
+                <div className="relative flex flex-col gap-3 py-7 px-6 mb-8">
+                  <div className="absolute inset-0 rounded-3xl pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(23,169,201,0.1) 0%, rgba(33,232,255,0.04) 55%, transparent 100%)' }} />
+                  <p className="text-[9px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.6)' }}>AI Insight</p>
+                  <p className="text-[14px] font-light text-zinc-200 leading-relaxed">{activeReportDetail.insight}</p>
+                </div>
+              )}
+            </>
+          )}
 
         <div className="space-y-6">
           <div className="space-y-4">
@@ -626,14 +626,14 @@ export default function ReportsPage({
                     <div
                       className="w-[90px] h-[90px] rounded-full flex items-center justify-center"
                       style={{
-                        background: 'radial-gradient(circle at 38% 32%, rgba(33,232,255,0.38) 0%, rgba(23,169,201,0.16) 100%)',
-                        border: '1.5px solid rgba(33,232,255,0.65)',
-                        boxShadow: '0 0 24px rgba(33,232,255,0.3), inset 0 0 18px rgba(33,232,255,0.12)',
+                        background: 'radial-gradient(circle at 38% 32%, rgba(23,169,201,0.20) 0%, rgba(23,169,201,0.08) 100%)',
+                        border: '1.5px solid rgba(23,169,201,0.4)',
+                        boxShadow: '0 0 16px rgba(23,169,201,0.16), inset 0 0 12px rgba(23,169,201,0.08)',
                       }}
                     >
                       <span className="text-2xl leading-none">{FEELING_EMOJIS[f] ?? '•'}</span>
                     </div>
-                    <span className="text-[9px] font-mono text-[#21e8ff] tracking-widest">{f}</span>
+                    <span className="text-[9px] font-mono text-[#17A9C9] tracking-widest">{f}</span>
                   </div>
                 ))}
               </div>
@@ -643,14 +643,14 @@ export default function ReportsPage({
           <div className="space-y-4">
             <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-500 mb-3 block">Notes</span>
             <div
-              className="w-full rounded-xl px-4 py-3 text-[12px] font-light text-zinc-300 leading-relaxed min-h-[160px]"
+              className="w-full rounded-xl px-4 py-3 text-[12.5px] font-light text-zinc-200 leading-relaxed min-h-[56px]"
               style={{
-                background: 'rgba(23,169,201,0.04)',
-                border: '1px solid rgba(33,232,255,0.12)',
-                boxShadow: '0 0 12px rgba(33,232,255,0.04)',
+                background: 'rgba(23,169,201,0.10)',
+                border: '1px solid rgba(33,232,255,0.2)',
+                boxShadow: '0 0 12px rgba(33,232,255,0.06)',
               }}
             >
-              {activeReportDetail.notes || <span className="text-zinc-600 italic">No notes logged for this session.</span>}
+              {activeReportDetail.notes || <span className="text-zinc-500 italic">No notes logged for this session.</span>}
             </div>
           </div>
         </div>

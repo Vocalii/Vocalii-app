@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   goals                TEXT[] DEFAULT '{}',
   symptoms             TEXT[] DEFAULT '{}',
   desired_voice_traits TEXT[] DEFAULT '{}',
+  voice_statement      TEXT,
   voice_barrier        TEXT,
   voice_identity       TEXT,
   baseline_set_at      TIMESTAMPTZ,
@@ -25,7 +26,18 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- ALTER TABLE public.profiles
 --   ADD COLUMN IF NOT EXISTS voice_barrier TEXT,
 --   ADD COLUMN IF NOT EXISTS baseline_set_at TIMESTAMPTZ,
---   ADD COLUMN IF NOT EXISTS desired_voice_traits TEXT[] DEFAULT '{}';
+--   ADD COLUMN IF NOT EXISTS desired_voice_traits TEXT[] DEFAULT '{}',
+--   ADD COLUMN IF NOT EXISTS voice_statement TEXT;
+
+-- Baseline voice-metric columns (assumed by application code; formalized here)
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS baseline_score NUMERIC,
+  ADD COLUMN IF NOT EXISTS baseline_stability_pct NUMERIC,
+  ADD COLUMN IF NOT EXISTS baseline_resonance_score NUMERIC,
+  ADD COLUMN IF NOT EXISTS baseline_clarity_pct NUMERIC,
+  ADD COLUMN IF NOT EXISTS baseline_loudness_db NUMERIC,
+  ADD COLUMN IF NOT EXISTS baseline_pitch_hz NUMERIC,
+  ADD COLUMN IF NOT EXISTS baseline_pitch_range_hz NUMERIC;
 
 -- Habit pairs chosen during onboarding
 CREATE TABLE IF NOT EXISTS public.habit_pairs (
@@ -43,18 +55,29 @@ CREATE TABLE IF NOT EXISTS public.daily_checkins (
   user_id      UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   date         DATE NOT NULL,
   vocal_effort INTEGER NOT NULL CHECK (vocal_effort >= 1 AND vocal_effort <= 10),
+  voice_demand_level INTEGER CHECK (voice_demand_level >= 1 AND voice_demand_level <= 5),
   symptoms     TEXT[] DEFAULT '{}',
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(user_id, date)
 );
 
+-- If this table already exists in your Supabase project, run this instead of the CREATE TABLE above:
+-- ALTER TABLE public.daily_checkins
+--   ADD COLUMN IF NOT EXISTS voice_demand_level INTEGER CHECK (voice_demand_level >= 1 AND voice_demand_level <= 5);
+
+ALTER TABLE public.daily_checkins
+  ADD COLUMN IF NOT EXISTS voice_confidence INTEGER CHECK (voice_confidence >= 1 AND voice_confidence <= 5),
+  ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+
 -- Ritual completions (per user, per day, per ritual)
 CREATE TABLE IF NOT EXISTS public.ritual_completions (
-  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id    UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  date       DATE NOT NULL,
-  ritual_id  TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  id                UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id           UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  date              DATE NOT NULL,
+  ritual_id         TEXT NOT NULL,
+  feeling_rating    INTEGER CHECK (feeling_rating BETWEEN 0 AND 10),
+  difficulty_rating INTEGER CHECK (difficulty_rating BETWEEN 0 AND 10), -- higher = harder; inverted (10 - value) when scoring
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(user_id, date, ritual_id)
 );
 
@@ -79,6 +102,11 @@ CREATE TABLE IF NOT EXISTS public.vocal_reports (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- If this table already exists in your Supabase project, run this instead of the CREATE TABLE above:
+-- ALTER TABLE public.vocal_reports
+--   ADD COLUMN IF NOT EXISTS loudness_db NUMERIC,
+--   ADD COLUMN IF NOT EXISTS stability_pct NUMERIC;
+
 -- Daily habit-pair completions (marked during the check-in flow)
 CREATE TABLE IF NOT EXISTS public.habit_completions (
   id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -93,13 +121,61 @@ CREATE TABLE IF NOT EXISTS public.habit_completions (
 
 -- Upcoming vocal events (rehearsals, performances, appointments, etc.)
 CREATE TABLE IF NOT EXISTS public.events (
-  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id    UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  title      TEXT NOT NULL,
-  date       DATE NOT NULL,
-  time       TEXT,
-  location   TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id              UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  title                TEXT NOT NULL,
+  date                 DATE NOT NULL,
+  time                 TEXT,
+  location             TEXT,
+  prep_days_before     INTEGER CHECK (prep_days_before BETWEEN 1 AND 7),
+  tailored_ritual_ids  TEXT[] DEFAULT '{}',
+  ai_insight           TEXT,
+  chat_transcript      JSONB DEFAULT '[]',
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- If this table already exists in your Supabase project, run this instead of the CREATE TABLE above:
+-- ALTER TABLE public.events
+--   ADD COLUMN IF NOT EXISTS prep_days_before INTEGER CHECK (prep_days_before BETWEEN 1 AND 7),
+--   ADD COLUMN IF NOT EXISTS tailored_ritual_ids TEXT[] DEFAULT '{}',
+--   ADD COLUMN IF NOT EXISTS ai_insight TEXT,
+--   ADD COLUMN IF NOT EXISTS chat_transcript JSONB DEFAULT '[]';
+
+-- Daily/weekly goal-progress status snapshots (one row per user/day/goal, write-only
+-- traceability log for the goal-progress rule engine — see src/lib/goalProgress.ts)
+CREATE TABLE IF NOT EXISTS public.goal_progress_snapshots (
+  id                   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id              UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  date                 DATE NOT NULL,
+  goal                 TEXT NOT NULL,
+  status               TEXT NOT NULL,
+  rule_version         TEXT NOT NULL,
+  primary_value        NUMERIC,
+  primary_value_prior  NUMERIC,
+  observations_count   INTEGER,
+  safety_triggered     BOOLEAN NOT NULL DEFAULT FALSE,
+  details              JSONB DEFAULT '{}',
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, date, goal)
+);
+
+-- Once-a-week reflection: 2 questions tied to the user's selected goal, 2 tied to their
+-- selected trait, 1 universal confidence question, plus an optional free-text reflection.
+-- See src/lib/weeklyCheckin.ts for the question text and week_start computation.
+CREATE TABLE IF NOT EXISTS public.weekly_checkins (
+  id                UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id           UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  week_start        DATE NOT NULL,
+  goal_id           TEXT NOT NULL,
+  goal_question_1   INTEGER CHECK (goal_question_1 BETWEEN 0 AND 10),
+  goal_question_2   INTEGER CHECK (goal_question_2 BETWEEN 0 AND 10), -- reverse-scored for build_endurance/improve_clarity — see REVERSE_SCORED_GOALS in src/lib/weeklyCheckin.ts; raw value stored here, invert only when scoring
+  trait             TEXT NOT NULL,
+  trait_question_1  INTEGER CHECK (trait_question_1 BETWEEN 0 AND 10),
+  trait_question_2  INTEGER CHECK (trait_question_2 BETWEEN 0 AND 10),
+  voice_confidence  INTEGER CHECK (voice_confidence BETWEEN 0 AND 10),
+  reflection        TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, week_start)
 );
 
 -- ============================================================
@@ -113,6 +189,8 @@ ALTER TABLE public.ritual_completions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vocal_reports     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.events            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.habit_completions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.goal_progress_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.weekly_checkins ENABLE ROW LEVEL SECURITY;
 
 -- profiles
 CREATE POLICY "profiles_select" ON public.profiles FOR SELECT USING (auth.uid() = id);
@@ -126,3 +204,5 @@ CREATE POLICY "ritual_completions_all" ON public.ritual_completions FOR ALL USIN
 CREATE POLICY "vocal_reports_all"      ON public.vocal_reports      FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "events_all"             ON public.events             FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "habit_completions_all"  ON public.habit_completions  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "goal_progress_snapshots_all" ON public.goal_progress_snapshots FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "weekly_checkins_all" ON public.weekly_checkins FOR ALL USING (auth.uid() = user_id);

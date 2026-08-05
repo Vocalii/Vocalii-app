@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { MapPin, Sparkles, Flame } from 'lucide-react';
+import { useState, Fragment } from 'react';
+import { MapPin, Sparkles, Flame, Quote } from 'lucide-react';
 import { Destination } from '../types';
+import { TRAIT_DESCRIPTIONS, TRAIT_COLORS, TRAIT_QUOTES } from './onboarding/ScreenVoiceTraits';
 
 interface HeroSectionProps {
   destination: Destination;
@@ -11,6 +12,24 @@ interface HeroSectionProps {
   onNavigateWeeklyReport: () => void;
   userName?: string;
   userRole?: string;
+  desiredVoiceTraits?: string[];
+  voiceStatement?: string;
+}
+
+type DescriptionSegment = { text: string; type: 'plain' | 'main' | 'secondary' };
+
+function parseTraitDescription(desc: string): DescriptionSegment[] {
+  const regex = /\{\{(.+?)\}\}|\*\*(.+?)\*\*/g;
+  const segments: DescriptionSegment[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(desc)) !== null) {
+    if (match.index > lastIndex) segments.push({ text: desc.slice(lastIndex, match.index), type: 'plain' });
+    segments.push(match[1] !== undefined ? { text: match[1], type: 'main' } : { text: match[2], type: 'secondary' });
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < desc.length) segments.push({ text: desc.slice(lastIndex), type: 'plain' });
+  return segments;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -28,18 +47,22 @@ export default function HeroSection({
   destination,
   userName,
   userRole,
+  desiredVoiceTraits,
+  voiceStatement,
 }: HeroSectionProps) {
   // Let user toggle between high fidelity Call of Duty HUD and beautiful scenic caldera photo!
   const [hudMode, setHudMode] = useState(true);
+
+  const selectedTrait = desiredVoiceTraits?.[0];
+  const traitDescription = selectedTrait ? TRAIT_DESCRIPTIONS[selectedTrait] : undefined;
+  const traitColor = selectedTrait ? TRAIT_COLORS[selectedTrait] : undefined;
+  const traitQuote = voiceStatement?.trim() || (selectedTrait ? TRAIT_QUOTES[selectedTrait] : undefined);
 
   // Render Call of Duty Campaign Tactical Dashboard for Santorini
   const renderTacticalHud = () => {
     return (
       <div className="bg-gradient-to-b from-[#1c202a] via-[#181b22] to-[#12141a] flex flex-col p-7 md:p-8 select-none overflow-hidden rounded-3xl border border-zinc-800/70 shadow-sm relative">
-        
-        {/* Sleek top ambient glow line */}
-        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#17A9C9]/20 to-transparent" />
-        
+
         {/* Soft elegant ambient color glows */}
         <div className="absolute bottom-[-10%] left-[-15%] w-[50%] h-[45%] bg-[#17A9C9]/[0.02] rounded-full blur-[100px] pointer-events-none" />
         <div className="absolute bottom-[-15%] right-[-5%] w-[55%] h-[55%] bg-[#8b5cf6]/[0.04] rounded-full blur-[120px] pointer-events-none" />
@@ -51,16 +74,57 @@ export default function HeroSection({
             <h2 className="text-white text-xl md:text-2xl font-light tracking-wide font-display leading-none">
               Welcome back, {userName || 'there'}
             </h2>
-            <div className="flex items-center gap-1.5 mt-1.5">
-              <span className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">
-                Your vocal health and performance statistics
-              </span>
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+              {traitDescription && traitColor ? (
+                <span className="text-[11px] font-medium text-zinc-400 leading-snug max-w-md">
+                  {parseTraitDescription(traitDescription).map((segment, i) => {
+                    if (segment.type === 'main') {
+                      return (
+                        <span
+                          key={i}
+                          className="font-bold"
+                          style={{ color: `color-mix(in srgb, ${traitColor.primary} 85%, #a1a1aa)`, textShadow: `0 0 5px ${traitColor.primary}70, 0 0 9px ${traitColor.glow}` }}
+                        >
+                          {segment.text}
+                        </span>
+                      );
+                    }
+                    if (segment.type === 'secondary') {
+                      return (
+                        <span
+                          key={i}
+                          className="font-semibold"
+                          style={{ color: `color-mix(in srgb, ${traitColor.primary} 55%, #a1a1aa)`, textShadow: `0 0 5px ${traitColor.glow}` }}
+                        >
+                          {segment.text}
+                        </span>
+                      );
+                    }
+                    return <Fragment key={i}>{segment.text}</Fragment>;
+                  })}
+                </span>
+              ) : (
+                <span className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">
+                  Your vocal health and performance statistics
+                </span>
+              )}
             </div>
+
+            {traitQuote && traitColor && (
+              <div
+                className="flex items-start gap-2 mt-3 pl-3 max-w-md border-l-2"
+                style={{ borderColor: traitColor.border }}
+              >
+                <p className="text-[11px] italic text-zinc-400 leading-snug">
+                  I want my voice to {traitQuote}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
             <span className="px-3.5 py-1.5 bg-zinc-900/60 text-[10px] tracking-[0.2em] font-bold uppercase text-zinc-400 border border-zinc-800/80 rounded-full shadow-inner mt-0.5">
-              {(userRole && ROLE_LABELS[userRole]) || 'Vocalist'}
+              {selectedTrait ? `${selectedTrait} ` : ''}{(userRole && ROLE_LABELS[userRole]) || 'Vocalist'}
             </span>
           </div>
         </div>
@@ -74,7 +138,7 @@ export default function HeroSection({
   const renderScenicCard = () => {
     return (
       <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-sm border border-zinc-850/50 group">
-        
+
         {/* Background Scenic High-Res Destination Image */}
         <img
           src={destination.imageUrl}
@@ -87,7 +151,7 @@ export default function HeroSection({
 
         {/* Content Container (Grid / Flex overlay) */}
         <div className="absolute inset-0 p-5 md:p-6 flex flex-col justify-between z-10 text-white">
-          
+
           {/* Top Layer: Geotag */}
           <div className="flex items-center justify-between">
             {/* Geotag */}

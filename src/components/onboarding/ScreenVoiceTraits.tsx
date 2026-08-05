@@ -5,11 +5,15 @@ import { motion, AnimatePresence } from 'motion/react';
 interface Props {
   desiredTraits: string[];
   onChangeDesiredTraits: (traits: string[]) => void;
+  voiceStatement: string;
+  onChangeVoiceStatement: (statement: string) => void;
   onNext: () => void;
   onBack: () => void;
   step: number;
   totalSteps: number;
 }
+
+export const VOICE_STATEMENT_MAX_LENGTH = 50;
 
 // single color per trait for distinct selected states
 export const TRAIT_COLORS: Record<string, { primary: string; glow: string; border: string }> = {
@@ -20,6 +24,25 @@ export const TRAIT_COLORS: Record<string, { primary: string; glow: string; borde
   Engaging: { primary: '#10b981', glow: 'rgba(16,185,129,0.22)', border: 'rgba(16,185,129,0.6)' },
 };
 
+// {{word}} marks the main trait word (full color + strongest glow in HeroSection);
+// **word** marks secondary words (same color, dialed down, less glow)
+export const TRAIT_DESCRIPTIONS: Record<string, string> = {
+  Confident: 'You want a {{Confident}} voice that focuses on sounding **impactful**, **powerful**, and **authoritative**.',
+  Calm: 'You want a {{Calm}} voice that focuses on feeling **grounded** and **relaxed**.',
+  Clear: 'You want a {{Clear}} voice that focuses on sounding **professional** and **easy to follow**.',
+  Warm: 'You want a {{Warm}} voice that focuses on feeling **approachable** and **authentic**.',
+  Engaging: 'You want an {{Engaging}} voice that focuses on being **energetic** and **dynamic** when you speak.',
+};
+
+// Short mantra shown under the trait description on the dashboard
+export const TRAIT_QUOTES: Record<string, string> = {
+  Confident: 'Speak like you already believe it.',
+  Calm: 'Let your breath lead before your words do.',
+  Clear: 'Say less, but say it clean.',
+  Warm: 'Let people feel welcomed in your tone.',
+  Engaging: 'Bring the energy you want them to catch.',
+};
+
 export const TRAITS: { label: string; subtitle: string; emoji: string; glowPos: React.CSSProperties }[] = [
   { label: 'Confident', subtitle: 'Impactful, powerful, authoritative', emoji: '💪', glowPos: { top: '5%', left: '5%' } },
   { label: 'Calm', subtitle: 'Calm, grounded, relaxed', emoji: '🧘', glowPos: { top: '5%', right: '5%' } },
@@ -28,7 +51,9 @@ export const TRAITS: { label: string; subtitle: string; emoji: string; glowPos: 
   { label: 'Engaging', subtitle: 'Energetic, dynamic', emoji: '⚡', glowPos: { bottom: '5%', left: '35%' } },
 ];
 
-export default function ScreenVoiceTraits({ desiredTraits, onChangeDesiredTraits, onNext, onBack, step, totalSteps }: Props) {
+export default function ScreenVoiceTraits({ desiredTraits, onChangeDesiredTraits, voiceStatement, onChangeVoiceStatement, onNext, onBack, step, totalSteps }: Props) {
+  const selectedTrait = desiredTraits[0];
+
   const select = (label: string) => {
     if (desiredTraits[0] === label) {
       onChangeDesiredTraits([]);
@@ -114,7 +139,7 @@ export default function ScreenVoiceTraits({ desiredTraits, onChangeDesiredTraits
                 }}
                 transition={{
                   opacity: { delay: i * 0.08, duration: 0.4, ease: 'easeOut' },
-                  scale:   { delay: i * 0.08, duration: 0.5, ease: [0.34, 1.56, 0.64, 1] },
+                  scale: { delay: i * 0.08, duration: 0.5, ease: [0.34, 1.56, 0.64, 1] },
                   y: {
                     delay: i * 0.08 + 0.5,
                     duration: 3.5 + i * 0.2,
@@ -157,6 +182,40 @@ export default function ScreenVoiceTraits({ desiredTraits, onChangeDesiredTraits
             );
           })}
         </div>
+
+        {/* Personal statement — becomes the quote shown on the dashboard */}
+        <AnimatePresence>
+          {selectedTrait && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: 'auto' }}
+              exit={{ opacity: 0, y: 10, height: 0 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              className="overflow-hidden"
+            >
+              <div className="mt-8 flex flex-col items-center gap-2">
+                <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+                  (optional) I want my voice to:
+                </label>
+                <input
+                  type="text"
+                  value={voiceStatement}
+                  onChange={(e) => onChangeVoiceStatement(e.target.value.slice(0, VOICE_STATEMENT_MAX_LENGTH))}
+                  maxLength={VOICE_STATEMENT_MAX_LENGTH}
+                  placeholder={`e.g. "${TRAIT_QUOTES[selectedTrait]}"`}
+                  className="w-full max-w-md h-11 rounded-xl px-4 text-[13px] text-center text-zinc-200 placeholder-zinc-600 outline-none transition-colors duration-150"
+                  style={{
+                    background: 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${TRAIT_COLORS[selectedTrait].border.replace('0.6', '0.3')}`,
+                  }}
+                />
+                <span className="text-[9px] font-mono text-zinc-600">
+                  {voiceStatement.length}/{VOICE_STATEMENT_MAX_LENGTH}
+                </span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Navigation */}
         <div className="flex items-center justify-between mt-10">
