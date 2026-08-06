@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { ArrowLeft, ArrowRight, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HabitPair } from '../../types/onboarding';
+import OnboardingLogo from './OnboardingLogo';
+import OnboardingStepProgress from './OnboardingStepProgress';
 
 interface Props {
   value: HabitPair[];
@@ -69,25 +71,10 @@ export default function ScreenHabits({ value, onChange, onNext, onBack, step, to
 
         {/* Logo + progress */}
         <div className="flex flex-col items-center mb-10">
-          <div className="flex flex-col gap-[3px] mb-6">
-            <div className="flex gap-[3px]">
-              <span className="w-2 h-2 rounded-[2px] bg-[#17A9C9]" />
-              <span className="w-2 h-2 rounded-[2px] bg-[#21e8ff]/40" />
-            </div>
-            <div className="flex gap-[3px]">
-              <span className="w-2 h-2 rounded-[2px] bg-[#21e8ff]" />
-              <span className="w-2 h-2 rounded-[2px] bg-[#17A9C9]/60" />
-            </div>
+          <div className="mb-6">
+            <OnboardingLogo />
           </div>
-          <div className="flex items-center gap-1">
-            {Array.from({ length: totalSteps }).map((_, i) => (
-              <div
-                key={i}
-                className={`h-0.5 w-6 rounded-full transition-all duration-500 ${i < step ? 'bg-[#21e8ff]' : 'bg-zinc-800'}`}
-              />
-            ))}
-            <span className="text-[10px] text-zinc-600 font-mono ml-1">{step}/{totalSteps}</span>
-          </div>
+          <OnboardingStepProgress step={step} totalSteps={totalSteps} />
         </div>
 
         {/* Heading */}

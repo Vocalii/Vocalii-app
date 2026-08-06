@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
+import OnboardingLogo from './OnboardingLogo';
 
 interface Props {
   onNext: () => void;
@@ -17,18 +18,11 @@ export default function ScreenTerms({ onNext, onBack }: Props) {
 
       <div className="w-full max-w-lg bg-[#111317] border border-zinc-900 rounded-[32px] shadow-[0_32px_96px_rgba(0,0,0,0.7)] p-8 sm:p-10 relative z-10">
 
-        <div className="flex flex-col gap-[3px] mb-8">
-          <div className="flex gap-[3px]">
-            <span className="w-2.5 h-2.5 rounded-[3px] bg-[#17A9C9]" />
-            <span className="w-2.5 h-2.5 rounded-[3px] bg-[#21e8ff]/40" />
-          </div>
-          <div className="flex gap-[3px]">
-            <span className="w-2.5 h-2.5 rounded-[3px] bg-[#21e8ff]" />
-            <span className="w-2.5 h-2.5 rounded-[3px] bg-[#17A9C9]/60" />
-          </div>
+        <div className="mb-8">
+          <OnboardingLogo />
         </div>
 
-        <h1 className="text-xl font-medium tracking-tight text-zinc-100 mb-1">
+        <h1 className="text-2xl font-bold font-display tracking-tight text-white mb-1">
           Terms & Conditions
         </h1>
         <p className="text-xs text-zinc-500 leading-normal mb-6">

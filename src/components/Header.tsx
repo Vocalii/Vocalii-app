@@ -121,12 +121,7 @@ export default function Header({
         
         {/* Left Side: Logo & Brand "SAFE ONE" - styled to align nicely */}
         <div className="flex items-center gap-2.5 z-10 flex-shrink-0 select-none pl-3">
-          <div className="w-9 h-9 rounded-full border border-zinc-800 bg-gradient-to-tr from-zinc-950 to-zinc-900 flex items-center justify-center text-[#21e8ff] shadow-inner flex-shrink-0 hover:border-[#17A9C9]/50 transition-colors duration-350">
-            <svg className="w-5 h-5 text-[#21e8ff]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2L3 7V12C3 17 6.5 21 12 22C17.5 21 21 17 21 12V7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" fill="#17A9C9" fillOpacity="0.15" />
-              <path d="M13.5 8.5L9.5 13H13L11.5 16.5L15.5 12H12L13.5 8.5Z" fill="currentColor" />
-            </svg>
-          </div>
+          <img src="/assets/images/logo-mark.png" alt="Vocalii" className="w-9 h-9 rounded-full flex-shrink-0 hover:opacity-90 transition-opacity duration-350" />
           <span className="text-xs font-normal tracking-[0.25em] text-white uppercase font-sans whitespace-nowrap opacity-80 ">
             Vocalii
           </span>

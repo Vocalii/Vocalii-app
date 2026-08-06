@@ -1,6 +1,7 @@
 import React from 'react';
-import { motion } from 'motion/react';
 import BaselineFlow, { type BaselineMetrics } from '../BaselineFlow';
+import OnboardingLogo from './OnboardingLogo';
+import OnboardingStepProgress from './OnboardingStepProgress';
 
 interface Props {
   onNext: () => void;
@@ -24,31 +25,14 @@ export default function ScreenBaseline({ onNext, onBack: _onBack, onBaseline, st
 
         {/* Logo + progress */}
         <div className="flex flex-col items-center mb-8">
-          <div className="flex flex-col gap-[3px] mb-6">
-            <div className="flex gap-[3px]">
-              <span className="w-2 h-2 rounded-[2px] bg-[#17A9C9]" />
-              <span className="w-2 h-2 rounded-[2px] bg-[#21e8ff]/40" />
-            </div>
-            <div className="flex gap-[3px]">
-              <span className="w-2 h-2 rounded-[2px] bg-[#21e8ff]" />
-              <span className="w-2 h-2 rounded-[2px] bg-[#17A9C9]/60" />
-            </div>
+          <div className="mb-6">
+            <OnboardingLogo />
           </div>
-          <div className="flex items-center gap-2">
-            <div className="relative w-40 h-0.5 rounded-full overflow-hidden bg-zinc-800">
-              <motion.div
-                className="absolute inset-0 rounded-full"
-                style={{ background: 'linear-gradient(90deg, #17A9C9, #21e8ff, #17A9C9)' }}
-                animate={{ opacity: [0.6, 1, 0.6] }}
-                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-              />
-            </div>
-            <span className="text-[10px] text-zinc-600 font-mono">{step}/{totalSteps}</span>
-          </div>
+          <OnboardingStepProgress step={step} totalSteps={totalSteps} />
         </div>
 
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-light font-display text-white leading-tight tracking-tight mb-1">
+          <h1 className="text-2xl font-bold font-display text-white leading-tight tracking-tight mb-1">
             Let's hear your voice
           </h1>
           <p className="text-xs text-zinc-500">

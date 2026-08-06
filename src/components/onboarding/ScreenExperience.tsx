@@ -1,6 +1,8 @@
 import React from 'react';
 import { ArrowLeft, ArrowRight, Sprout, Flame, Star } from 'lucide-react';
 import { ExperienceLevel } from '../../types/onboarding';
+import OnboardingLogo from './OnboardingLogo';
+import OnboardingStepProgress from './OnboardingStepProgress';
 
 interface Props {
   value: ExperienceLevel | null;
@@ -47,36 +49,18 @@ export default function ScreenExperience({ value, onChange, onNext, onBack, step
       <div className="flex flex-col w-full lg:w-[68%] px-10 sm:px-16 py-12 relative z-10">
 
         {/* Logo */}
-        <div className="flex items-center gap-2.5 mb-8">
-          <div className="flex flex-col gap-[3px]">
-            <div className="flex gap-[3px]">
-              <span className="w-2 h-2 rounded-[2px] bg-[#17A9C9]" />
-              <span className="w-2 h-2 rounded-[2px] bg-[#21e8ff]/40" />
-            </div>
-            <div className="flex gap-[3px]">
-              <span className="w-2 h-2 rounded-[2px] bg-[#21e8ff]" />
-              <span className="w-2 h-2 rounded-[2px] bg-[#17A9C9]/60" />
-            </div>
-          </div>
-          <span className="text-sm font-semibold text-zinc-300 tracking-tight font-display">Vocalii</span>
+        <div className="mb-8">
+          <OnboardingLogo />
         </div>
 
         {/* Step progress */}
         <div className="mb-10">
-          <div className="flex items-center gap-1 mb-1.5">
-            {Array.from({ length: totalSteps }).map((_, i) => (
-              <div
-                key={i}
-                className={`h-0.5 w-6 rounded-full transition-all duration-500 ${i < step ? 'bg-[#21e8ff]' : 'bg-zinc-800'}`}
-              />
-            ))}
-            <span className="text-[10px] text-zinc-600 font-mono ml-1">{step}/{totalSteps}</span>
-          </div>
+          <OnboardingStepProgress step={step} totalSteps={totalSteps} />
         </div>
 
         {/* Heading */}
         <div className="mb-8">
-          <h1 className="text-2xl font-light font-display text-white leading-tight tracking-tight mb-1">
+          <h1 className="text-2xl font-bold font-display text-white leading-tight tracking-tight mb-1">
             Experience Level
           </h1>
           <p className="text-xs text-zinc-500">

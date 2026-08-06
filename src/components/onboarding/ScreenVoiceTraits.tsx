@@ -1,6 +1,8 @@
 import React from 'react';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import OnboardingLogo from './OnboardingLogo';
+import OnboardingStepProgress from './OnboardingStepProgress';
 
 interface Props {
   desiredTraits: string[];
@@ -92,30 +94,15 @@ export default function ScreenVoiceTraits({ desiredTraits, onChangeDesiredTraits
 
         {/* Logo + progress */}
         <div className="flex flex-col items-center mb-10">
-          <div className="flex flex-col gap-[3px] mb-6">
-            <div className="flex gap-[3px]">
-              <span className="w-2 h-2 rounded-[2px] bg-[#17A9C9]" />
-              <span className="w-2 h-2 rounded-[2px] bg-[#21e8ff]/40" />
-            </div>
-            <div className="flex gap-[3px]">
-              <span className="w-2 h-2 rounded-[2px] bg-[#21e8ff]" />
-              <span className="w-2 h-2 rounded-[2px] bg-[#17A9C9]/60" />
-            </div>
+          <div className="mb-6">
+            <OnboardingLogo />
           </div>
-          <div className="flex items-center gap-1">
-            {Array.from({ length: totalSteps }).map((_, i) => (
-              <div
-                key={i}
-                className={`h-0.5 w-6 rounded-full transition-all duration-500 ${i < step ? 'bg-[#21e8ff]' : 'bg-zinc-800'}`}
-              />
-            ))}
-            <span className="text-[10px] text-zinc-600 font-mono ml-1">{step}/{totalSteps}</span>
-          </div>
+          <OnboardingStepProgress step={step} totalSteps={totalSteps} />
         </div>
 
         {/* Heading */}
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-light font-display text-white leading-tight tracking-tight mb-1">
+          <h1 className="text-2xl font-bold font-display text-white leading-tight tracking-tight mb-1">
             How do you want to sound?
           </h1>
           <p className="text-xs text-zinc-500">
