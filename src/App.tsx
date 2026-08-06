@@ -678,6 +678,19 @@ export default function App() {
     }
   };
 
+  // Lets a user swap out a specific ritual in today's assigned routine (e.g. the straw
+  // phonation ritual, if they don't have a straw) for another one, without waiting for a new
+  // AI selection. Persists the same way the original selection did.
+  const handleSwapRitual = async (oldRitualId: string, newRitualId: string) => {
+    if (!selectedRitualIds) return;
+    const updated = selectedRitualIds.map(id => (id === oldRitualId ? newRitualId : id));
+    setSelectedRitualIds(updated);
+    if (userId) {
+      const today = new Date().toISOString().slice(0, 10);
+      await supabase.from('daily_checkins').update({ selected_ritual_ids: updated }).eq('user_id', userId).eq('date', today);
+    }
+  };
+
   // Dev/testing helper — clears today's check-in so the flow can be re-run same-day
   const handleResetCheckIn = async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -967,6 +980,7 @@ export default function App() {
             habitPairs={userHabits}
             onCompleteCheckIn={handleCompleteCheckIn}
             onResetCheckIn={handleResetCheckIn}
+            onSwapRitual={handleSwapRitual}
             autoStart={autoStartRituals}
             onAutoStartConsumed={() => setAutoStartRituals(false)}
           />

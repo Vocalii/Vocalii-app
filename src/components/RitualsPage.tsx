@@ -18,6 +18,8 @@ import {
   Feather,
   AudioWaveform,
   Hammer,
+  AlertTriangle,
+  Shuffle,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -90,11 +92,16 @@ interface RitualsPageProps {
   habitPairs: HabitPair[];
   onCompleteCheckIn: (vocalEffort: number, confidence: number, symptoms: string[], habitChecks: HabitCheckEntry[], demandLevel: number, notes: string, supportArea: string) => void;
   onResetCheckIn?: () => void;
+  onSwapRitual?: (oldRitualId: string, newRitualId: string) => void;
   autoStart?: boolean;
   onAutoStartConsumed?: () => void;
 }
 
-export default function RitualsPage({ dailyRitualIds, activePrepEvent, completedRitualIds, onCompleteRitual, onRestartRoutine, checkInDone, ritualsLoading, ritualInsight, habitPairs, onCompleteCheckIn, onResetCheckIn, autoStart, onAutoStartConsumed }: RitualsPageProps) {
+// The only ritual requiring equipment (a straw) — if it's in today's assigned routine, offer a
+// one-tap swap to another ritual instead of blocking someone who doesn't have one on hand.
+const STRAW_RITUAL_ID = 'straw-phonation-hierarchy';
+
+export default function RitualsPage({ dailyRitualIds, activePrepEvent, completedRitualIds, onCompleteRitual, onRestartRoutine, checkInDone, ritualsLoading, ritualInsight, habitPairs, onCompleteCheckIn, onResetCheckIn, onSwapRitual, autoStart, onAutoStartConsumed }: RitualsPageProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedRitual, setSelectedRitual] = useState<Ritual | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -206,6 +213,24 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
   const getFirstIncompleteRitual = (): Ritual | null => {
     const nextId = dailyRitualIds.find(id => !completedRitualIds.includes(id));
     return nextId ? (EXERCISE_RITUALS.find(r => r.id === nextId) ?? null) : null;
+  };
+
+  // Prefer another ritual already in today's routine's category, then any other ritual not
+  // already assigned today — never re-offers the straw ritual itself.
+  const pickStrawReplacement = (): Ritual | null => {
+    const currentRoutine = new Set(dailyRitualIds);
+    const category = selectedRitual?.category;
+    const candidates = EXERCISE_RITUALS.filter(r => r.id !== STRAW_RITUAL_ID && !currentRoutine.has(r.id));
+    const sameCategory = candidates.filter(r => r.category === category);
+    return (sameCategory[0] ?? candidates[0]) ?? null;
+  };
+
+  const handleSwapStrawRitual = () => {
+    if (!selectedRitual) return;
+    const replacement = pickStrawReplacement();
+    if (!replacement) return;
+    onSwapRitual?.(selectedRitual.id, replacement.id);
+    setSelectedRitual(replacement);
   };
 
   const handleMarkComplete = () => {
@@ -1395,6 +1420,26 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                         {selectedRitual.primaryFocus}
                       </span>
                     </div>
+
+                    {selectedRitual.id === STRAW_RITUAL_ID && isInRoutine && !completedRitualIds.includes(selectedRitual.id) && (
+                      <div
+                        className="mb-6 flex items-center gap-3 rounded-xl px-4 py-3"
+                        style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)' }}
+                      >
+                        <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                        <p className="text-[11.5px] text-amber-200/80 flex-1 leading-snug">
+                          This ritual uses a straw. Don't have one?
+                        </p>
+                        <button
+                          onClick={handleSwapStrawRitual}
+                          className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono uppercase tracking-widest text-amber-300 hover:text-amber-100 transition-colors duration-150 cursor-pointer"
+                          style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)' }}
+                        >
+                          <Shuffle className="w-3 h-3" />
+                          Swap
+                        </button>
+                      </div>
+                    )}
 
                     <AnimatePresence mode="wait">
                       {ritualCompleted ? (
