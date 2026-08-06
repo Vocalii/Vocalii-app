@@ -367,7 +367,7 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                   {checkInDone ? (
                     <button
                       disabled
-                      className={`border px-5 py-2.5 text-[10px] font-lig tracking-widest uppercase rounded-xl flex items-center gap-2 opacity-60 cursor-default w-fit ${activePrepEvent ? 'border-[#3b82f6]/25 bg-[#3b82f6]/5' : 'border-[#17A9C9]/25 bg-[#17A9C9]/5'}`}
+                      className={`border px-5 py-2.5 text-[10px] font-semibold tracking-widest rounded-xl flex items-center gap-2 opacity-60 cursor-default w-fit ${activePrepEvent ? 'border-[#3b82f6]/25 bg-[#3b82f6]/5' : 'border-[#17A9C9]/25 bg-[#17A9C9]/5'}`}
                     >
                       <Check className={`w-3 h-3 ${activePrepEvent ? 'text-[#60a5fa]' : 'text-[#17A9C9]'}`} />
                       <span className={activePrepEvent ? 'text-[#60a5fa]' : 'text-[#17A9C9]'}>Checked In</span>
@@ -385,7 +385,7 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                   {!checkInDone && (
                     <button
                       onClick={() => setShowCheckInModal(true)}
-                      className={`relative overflow-hidden group/ci px-5 py-2.5 text-[10px] font-mono tracking-widest uppercase rounded-xl flex items-center gap-2.5 transition-all duration-300 cursor-pointer w-fit border ${activePrepEvent
+                      className={`relative overflow-hidden group/ci px-5 py-2.5 text-[10px] font-semibold tracking-widest uppercase rounded-xl flex items-center gap-2.5 transition-all duration-300 cursor-pointer w-fit border ${activePrepEvent
                         ? 'bg-[#3b82f6]/20 hover:bg-[#3b82f6]/30 border-[#3b82f6]/55 hover:border-[#60a5fa]/75 shadow-[0_0_12px_rgba(59,130,246,0.14)] hover:shadow-[0_0_18px_rgba(59,130,246,0.28)]'
                         : 'bg-[#17A9C9]/20 hover:bg-[#17A9C9]/30 border-[#17A9C9]/55 hover:border-[#21e8ff]/75 shadow-[0_0_12px_rgba(23,169,201,0.12)] hover:shadow-[0_0_18px_rgba(23,169,201,0.25)]'
                         }`}
@@ -400,7 +400,7 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                     <button
                       onClick={checkInDone ? handleStartDailyRituals : undefined}
                       disabled={!checkInDone}
-                      className={`relative overflow-hidden group/btn border px-5 py-2.5 text-[10px] font-mono tracking-widest uppercase rounded-xl flex items-center gap-2.5 transition-all duration-300 w-fit ${checkInDone
+                      className={`relative overflow-hidden group/btn border px-5 py-2.5 text-[10px] font-bold tracking-widest uppercase rounded-xl flex items-center gap-2.5 transition-all duration-300 w-fit ${checkInDone
                         ? activePrepEvent
                           ? 'bg-[#131722]/50 hover:bg-[#1b2130]/75 border-[#3b82f6]/30 hover:border-[#60a5fa]/60 cursor-pointer shadow-[0_4px_12px_rgba(0,0,0,0.15),inset_0_1px_1px_rgba(255,255,255,0.02)] hover:shadow-[0_0_15px_rgba(59,130,246,0.2)]'
                           : 'bg-[#131722]/50 hover:bg-[#1b2130]/75 border-[#17A9C9]/30 hover:border-[#21e8ff]/60 cursor-pointer shadow-[0_4px_12px_rgba(0,0,0,0.15),inset_0_1px_1px_rgba(255,255,255,0.02)] hover:shadow-[0_0_15px_rgba(33,232,255,0.15)]'
@@ -428,10 +428,10 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
             {/* Progress indicator */}
             <div className="flex items-center gap-4.5 w-full md:w-auto md:border-l border-zinc-800/80 md:pl-6.5 flex-shrink-0 justify-between md:justify-start">
               <div className="flex flex-col items-start md:items-end">
-                <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest mb-1.5">
+                <span className="text-[9px] font-light text-zinc-500 uppercase tracking-widest mb-1.5">
                   Today's Routine
                 </span>
-                <span className="text-[18px] font-light text-zinc-400 font-mono leading-none">
+                <span className="text-[18px] font-light text-zinc-400 font-light leading-none">
                   <span className="text-[#21e8ff] font-medium">{completedCount}</span>
                   <span className="text-zinc-700 mx-1">/</span>
                   <span>{dailyRitualIds.length}</span>
