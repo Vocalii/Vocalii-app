@@ -89,10 +89,13 @@ export interface ProfileContext {
   voiceBarrier: VoiceBarrier | null;
 }
 
+export type EscalationReason = 'note' | 'persistent_pain';
+
 export interface RitualSelectionResult {
   status: 'ok' | 'escalate';
   rituals: Ritual[];
-  insight: string | null; // short explanation of why these rituals were chosen; null for escalate/performance-mode
+  insight: string | null; // why these rituals were chosen, or (for escalate) why today was paused; null only for performance-mode
+  escalationReason?: EscalationReason;
 }
 
 // The support area picker (RitualsPage.tsx check-in) is now a single required selection with
@@ -143,6 +146,58 @@ function checkEscalation(notes: string): boolean {
   const lower = notes.toLowerCase();
   return [...PAIN_PHRASES, ...VOICE_LOSS_PHRASES, ...BREATHING_DIFFICULTY_PHRASES, ...SWALLOWING_DIFFICULTY_PHRASES]
     .some(phrase => lower.includes(phrase));
+}
+
+// Catches the case a single day's note misses: pain mentioned on 2+ of the last few check-ins
+// (today included) even if today's note itself doesn't repeat it — e.g. someone reported pain
+// yesterday and the day before but left today's note blank. checkEscalation already handles a
+// same-day pain mention, so this only fires on days that wouldn't otherwise have escalated.
+const PERSISTENT_PAIN_LOOKBACK_DAYS = 2; // prior days checked, in addition to today
+const PERSISTENT_PAIN_MIN_DAYS = 2; // total days (including today) needed to flag as persistent
+
+async function checkPersistentPain(userId: string, todayNotes: string): Promise<boolean> {
+  const todayHasPain = PAIN_PHRASES.some(phrase => todayNotes.toLowerCase().includes(phrase));
+
+  const lookbackStart = new Date();
+  lookbackStart.setDate(lookbackStart.getDate() - PERSISTENT_PAIN_LOOKBACK_DAYS);
+  const lookbackStartIso = lookbackStart.toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const { data: rows } = await supabase
+    .from('daily_checkins')
+    .select('notes')
+    .eq('user_id', userId)
+    .gte('date', lookbackStartIso)
+    .lt('date', today);
+
+  const priorPainDays = (rows ?? []).filter(
+    r => PAIN_PHRASES.some(phrase => (r.notes ?? '').toLowerCase().includes(phrase))
+  ).length;
+
+  return priorPainDays + (todayHasPain ? 1 : 0) >= PERSISTENT_PAIN_MIN_DAYS;
+}
+
+interface EscalationInsightResponse {
+  insight?: string;
+}
+
+async function fetchEscalationInsight(reason: EscalationReason, checkin: DailyCheckinContext): Promise<string> {
+  const fallback = reason === 'persistent_pain'
+    ? "You've mentioned pain a couple of days in a row now, so we've paused today's routine — it's worth having this checked by a doctor or voice professional before doing more."
+    : "Your check-in mentioned something worth taking seriously, so today's routine has been paused — it may be worth checking in with a doctor or voice professional before practicing.";
+
+  try {
+    const res = await fetch('/api/escalation-insight', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason, notes: checkin.notes, supportArea: checkin.supportArea }),
+    });
+    if (!res.ok) throw new Error('escalation-insight request failed');
+    const data = (await res.json()) as EscalationInsightResponse;
+    return data.insight && data.insight.trim().length > 0 ? data.insight.trim() : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 interface RitualFeedbackEntry {
@@ -216,7 +271,13 @@ export async function selectRituals(
   }
 
   if (checkEscalation(checkin.notes)) {
-    return { status: 'escalate', rituals: [], insight: null };
+    const insight = await fetchEscalationInsight('note', checkin);
+    return { status: 'escalate', rituals: [], insight, escalationReason: 'note' };
+  }
+
+  if (await checkPersistentPain(userId, checkin.notes)) {
+    const insight = await fetchEscalationInsight('persistent_pain', checkin);
+    return { status: 'escalate', rituals: [], insight, escalationReason: 'persistent_pain' };
   }
 
   const hasTimeBarrier = profile.voiceBarrier === 'time_consistency';

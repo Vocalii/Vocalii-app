@@ -881,7 +881,8 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                       </button>
                       <button
                         onClick={handleLogCheckIn}
-                        className="relative overflow-hidden flex-1 py-3.5 rounded-xl flex items-center justify-center gap-2 cursor-pointer group/log transition-all duration-300"
+                        disabled={CHECK_IN_HABITS.some(h => habitChecks[h.id] == null)}
+                        className="relative overflow-hidden flex-1 py-3.5 rounded-xl flex items-center justify-center gap-2 cursor-pointer group/log transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed"
                         style={{
                           background: `linear-gradient(135deg, rgba(${modalAccentRGB},0.22) 0%, rgba(${modalAccentBrightRGB},0.10) 100%)`,
                           border: `1px solid rgba(${modalAccentBrightRGB},0.5)`,

@@ -289,6 +289,46 @@ function fallbackVoiceReportInsight(body: VoiceReportInsightRequestBody): string
   return `${resonanceLine} ${clarityLine} ${fatigueLine}`;
 }
 
+const ESCALATION_INSIGHT_TOOL: Anthropic.Tool = {
+  name: 'escalation_insight',
+  description: "Return a short, warm explanation of why today's routine was paused for safety reasons.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      insight: {
+        type: 'string',
+        description: '1-2 sentences, written directly to the user ("you"/"your"), explaining why rituals were not assigned today and gently recommending they check in with a doctor or voice professional before practicing. Warm, non-alarming, never diagnostic or speculative about a specific medical cause.',
+      },
+    },
+    required: ['insight'],
+  },
+};
+
+interface EscalationInsightRequestBody {
+  reason: 'note' | 'persistent_pain';
+  notes: string;
+  supportArea: string;
+}
+
+function buildEscalationInsightPrompt(body: EscalationInsightRequestBody): string {
+  const reasonContext = body.reason === 'persistent_pain'
+    ? `Their check-in notes have mentioned pain-related language on at least two of the last few days (today's note: "${body.notes || '(none today)'}"), suggesting this isn't a one-off.`
+    : `Today's check-in note mentioned language suggesting pain, voice loss, or breathing/swallowing difficulty: "${body.notes}".`;
+
+  return `You are Vocalii's safety narrator. A user's daily check-in triggered the app's safety pause — no vocal rituals were assigned today, and no AI ritual-selection call was made.
+
+${reasonContext}
+Their stated focus area today was: ${body.supportArea || 'not specified'}.
+
+Write a short (1-2 sentence) explanation, spoken directly to the user, of why no rituals were assigned today and that they should check in with a doctor or voice professional before practicing. Do not diagnose or speculate on a specific medical cause — just acknowledge what they reported and recommend professional guidance. Call the escalation_insight tool with the insight — no other text.`;
+}
+
+function fallbackEscalationInsight(body: EscalationInsightRequestBody): string {
+  return body.reason === 'persistent_pain'
+    ? "You've mentioned pain a couple of days in a row now, so we've paused today's routine — it's worth having this checked by a doctor or voice professional before doing more."
+    : "Your check-in mentioned something worth taking seriously, so today's routine has been paused — it may be worth checking in with a doctor or voice professional before practicing.";
+}
+
 function buildSystemPrompt(event: { title: string; date: string; location?: string | null }): string {
   const ritualList = EXERCISE_RITUALS
     .map(r => `- ${r.id}: "${r.name}" (${r.category}) — ${r.description}`)
@@ -531,6 +571,51 @@ app.post('/api/voice-report-insight', async (req, res) => {
     res.json({ insight: input.insight.trim() });
   } catch (err) {
     console.error('voice-report-insight error:', err);
+    res.status(500).json({ error: 'Failed to reach the AI service.' });
+  }
+});
+
+app.post('/api/escalation-insight', async (req, res) => {
+  try {
+    const body = req.body as EscalationInsightRequestBody;
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.log('[escalation-insight] no ANTHROPIC_API_KEY set — using template fallback, not Claude');
+      await new Promise(resolve => setTimeout(resolve, 400));
+      res.json({ insight: fallbackEscalationInsight(body) });
+      return;
+    }
+
+    console.log('[escalation-insight] calling Claude (claude-sonnet-5) for escalation insight...');
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-5',
+      max_tokens: 256,
+      system: buildEscalationInsightPrompt(body),
+      tools: [ESCALATION_INSIGHT_TOOL],
+      tool_choice: { type: 'tool', name: 'escalation_insight' },
+      messages: [{ role: 'user', content: "Explain today's safety pause." }],
+    });
+
+    const toolUse = response.content.find(
+      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use' && block.name === 'escalation_insight'
+    );
+
+    if (!toolUse) {
+      console.error('[escalation-insight] no tool_use block in response, content:', JSON.stringify(response.content));
+      res.json({ insight: fallbackEscalationInsight(body) });
+      return;
+    }
+
+    const input = toolUse.input as { insight?: unknown };
+    if (typeof input.insight !== 'string' || input.insight.trim().length === 0) {
+      console.error('[escalation-insight] unexpected tool input shape:', JSON.stringify(toolUse.input));
+      res.json({ insight: fallbackEscalationInsight(body) });
+      return;
+    }
+
+    res.json({ insight: input.insight.trim() });
+  } catch (err) {
+    console.error('escalation-insight error:', err);
     res.status(500).json({ error: 'Failed to reach the AI service.' });
   }
 });

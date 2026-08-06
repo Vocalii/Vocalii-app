@@ -666,8 +666,11 @@ export default function App() {
 
     if (selection.status === 'escalate') {
       setSelectedRitualIds([]);
-      setRitualInsight(null);
-      addNotification('Take it easy today', 'Your check-in suggests it may be worth checking in with a doctor or voice professional before practicing rituals today.');
+      setRitualInsight(selection.insight);
+      addNotification('Take it easy today', selection.insight ?? 'Your check-in suggests it may be worth checking in with a doctor or voice professional before practicing rituals today.');
+      if (userId) {
+        await supabase.from('daily_checkins').update({ selected_ritual_ids: [], ritual_insight: selection.insight ?? '' }).eq('user_id', userId).eq('date', today);
+      }
     } else {
       const ritualIds = selection.rituals.map(r => r.id);
       setSelectedRitualIds(ritualIds);
