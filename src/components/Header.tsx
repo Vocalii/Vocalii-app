@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, MapPin, Check, Sparkles, Bell, Info, Plus, User, Settings, LogOut } from 'lucide-react';
+import { Search, MapPin, Check, Sparkles, Bell, Info, Plus, User, Settings, LogOut, X } from 'lucide-react';
 import { Destination } from '../types';
 
 export interface AppNotification {
@@ -31,6 +31,7 @@ interface HeaderProps {
   setCurrentView: (view: 'home' | 'rituals' | 'reports') => void;
   notifications: AppNotification[];
   onClearNotifications: () => void;
+  onDismissNotification: (id: string) => void;
   onSignOut?: () => void;
   onOpenProfile?: () => void;
 }
@@ -49,6 +50,7 @@ export default function Header({
   setCurrentView,
   notifications,
   onClearNotifications,
+  onDismissNotification,
   onSignOut,
   onOpenProfile,
 }: HeaderProps) {
@@ -228,7 +230,11 @@ export default function Header({
                     notifications.map((n, i) => (
                       <div key={n.id}>
                         {i > 0 && <div className="h-px mx-4 bg-[#17A9C9]/10" />}
-                        <div className="flex items-start gap-3 px-4 py-2.5 hover:bg-[#17A9C9]/5 transition-colors duration-150">
+                        <button
+                          onClick={() => onDismissNotification(n.id)}
+                          title="Dismiss"
+                          className="w-full flex items-start gap-3 px-4 py-2.5 hover:bg-[#17A9C9]/5 transition-colors duration-150 cursor-pointer group/notif text-left"
+                        >
                           <div className="w-1.5 h-1.5 rounded-full bg-[#21e8ff] mt-1.5 flex-shrink-0 shadow-[0_0_6px_rgba(33,232,255,0.6)]" />
                           <div className="flex-1 min-w-0">
                             <p className="text-[12px] text-zinc-300 leading-snug">{n.text}</p>
@@ -237,7 +243,8 @@ export default function Header({
                             )}
                             <p className="text-[10px] text-[#21e8ff]/40 mt-0.5">{timeAgo(n.timestamp)}</p>
                           </div>
-                        </div>
+                          <X className="w-3 h-3 text-zinc-600 group-hover/notif:text-zinc-300 transition-colors duration-150 flex-shrink-0 mt-0.5" />
+                        </button>
                       </div>
                     ))
                   )}

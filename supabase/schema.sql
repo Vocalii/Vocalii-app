@@ -67,7 +67,12 @@ CREATE TABLE IF NOT EXISTS public.daily_checkins (
 
 ALTER TABLE public.daily_checkins
   ADD COLUMN IF NOT EXISTS voice_confidence INTEGER CHECK (voice_confidence >= 1 AND voice_confidence <= 5),
-  ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+  ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS support_area TEXT NOT NULL DEFAULT '', -- single required selection (superseded support_areas TEXT[])
+  ADD COLUMN IF NOT EXISTS selected_ritual_ids TEXT[] DEFAULT '{}', -- set once by selectRituals right after this check-in; resets whenever the row does
+  ADD COLUMN IF NOT EXISTS ritual_insight TEXT NOT NULL DEFAULT ''; -- short AI (or fallback) explanation of why these rituals were picked
+
+ALTER TABLE public.daily_checkins DROP COLUMN IF EXISTS support_areas;
 
 -- Ritual completions (per user, per day, per ritual)
 CREATE TABLE IF NOT EXISTS public.ritual_completions (
@@ -178,6 +183,23 @@ CREATE TABLE IF NOT EXISTS public.weekly_checkins (
   UNIQUE(user_id, week_start)
 );
 
+-- Cached AI-generated weekly report insight — generated once per (user, week_start) the first
+-- time WeeklyReportPage.tsx is viewed that week, then reused on every later visit so the report
+-- stays static for the rest of the week instead of regenerating (and re-calling Claude) each time.
+-- week_start here is the Monday of the *current* Mon-Sun week (computeWeekDates()'s week), which
+-- is a different "week" concept than weekly_checkins.week_start (the most recently *concluded*
+-- week) — intentionally not reusing that table.
+CREATE TABLE IF NOT EXISTS public.weekly_report_insights (
+  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id         UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  week_start      DATE NOT NULL,
+  overview        TEXT NOT NULL,
+  what_improved   TEXT NOT NULL,
+  needs_attention TEXT NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, week_start)
+);
+
 -- ============================================================
 -- Row Level Security — users can only access their own data
 -- ============================================================
@@ -191,6 +213,7 @@ ALTER TABLE public.events            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.habit_completions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.goal_progress_snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.weekly_checkins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.weekly_report_insights ENABLE ROW LEVEL SECURITY;
 
 -- profiles
 CREATE POLICY "profiles_select" ON public.profiles FOR SELECT USING (auth.uid() = id);
@@ -206,3 +229,4 @@ CREATE POLICY "events_all"             ON public.events             FOR ALL USIN
 CREATE POLICY "habit_completions_all"  ON public.habit_completions  FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "goal_progress_snapshots_all" ON public.goal_progress_snapshots FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "weekly_checkins_all" ON public.weekly_checkins FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "weekly_report_insights_all" ON public.weekly_report_insights FOR ALL USING (auth.uid() = user_id);

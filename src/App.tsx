@@ -18,6 +18,8 @@ import ReportsPage from './components/ReportsPage';
 import UpcomingEventsCard, { type VocalEvent } from './components/UpcomingEventsCard';
 import WeeklyReportPage from './components/WeeklyReportPage';
 import WeeklyCheckInPage from './components/WeeklyCheckInPage';
+import WeeklyReportSummary from './components/WeeklyReportSummary';
+import { selectRituals } from './lib/ritualSelection';
 import WeeklyReportLoadingScreen from './components/WeeklyReportLoadingScreen';
 import { getReflectionWeekStart } from './lib/weeklyCheckin';
 import ProfilePage, { type ProfileUpdates } from './components/ProfilePage';
@@ -26,8 +28,6 @@ import { Destination, Attraction, Message, Ritual } from './types';
 import { VocalReport, Role, ExperienceLevel, Goal, VoiceBarrier, HabitPair } from './types/onboarding';
 import { type BaselineMetrics } from './components/BaselineFlow';
 import { EXERCISE_RITUALS } from './ritualsData';
-
-const DEFAULT_DAILY_RITUAL_IDS = ['body-scan-grounding-reset', 'diaphragmatic-breathing-training', 'find-your-buzz'];
 import { X, Sparkles, Shield, Bookmark, Terminal, HelpCircle, ArrowRight } from 'lucide-react';
 
 const DESTINATION_THEMES: Record<string, {
@@ -168,6 +168,9 @@ export default function App() {
   const [todayVoiceDemandLevel, setTodayVoiceDemandLevel] = useState<number | null>(null);
   const [baselineConfidenceAvg, setBaselineConfidenceAvg] = useState<number | null>(null);
   const [todaySymptoms, setTodaySymptoms] = useState<string[]>([]);
+  const [selectedRitualIds, setSelectedRitualIds] = useState<string[] | null>(null);
+  const [ritualInsight, setRitualInsight] = useState<string | null>(null);
+  const [ritualsLoading, setRitualsLoading] = useState(false);
   const [baselineScore, setBaselineScore] = useState<number | null>(null);
   const [baselineStabilityPct, setBaselineStabilityPct] = useState<number | null>(null);
   const [baselineResonanceScore, setBaselineResonanceScore] = useState<number | null>(null);
@@ -188,6 +191,14 @@ export default function App() {
   const addNotification = (text: string, detail?: string) => {
     setNotifications(prev => {
       const next = [{ id: crypto.randomUUID(), text, detail, timestamp: Date.now() }, ...prev].slice(0, 20);
+      localStorage.setItem('vocalii_notifications', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const dismissNotification = (id: string) => {
+    setNotifications(prev => {
+      const next = prev.filter(n => n.id !== id);
       localStorage.setItem('vocalii_notifications', JSON.stringify(next));
       return next;
     });
@@ -254,6 +265,8 @@ export default function App() {
         setTodayVocalConfidence(checkin.voice_confidence ?? null);
         setTodayVoiceDemandLevel(checkin.voice_demand_level ?? null);
         setTodaySymptoms(checkin.symptoms ?? []);
+        setSelectedRitualIds(checkin.selected_ritual_ids?.length ? checkin.selected_ritual_ids : null);
+        setRitualInsight(checkin.ritual_insight || null);
       }
       setCompletedRitualIds(completions?.map(c => c.ritual_id) ?? []);
       setReports(reportsData?.map(mapReport) ?? []);
@@ -293,6 +306,9 @@ export default function App() {
     setTodayVocalConfidence(null);
     setTodayVoiceDemandLevel(null);
     setTodaySymptoms([]);
+    setSelectedRitualIds(null);
+    setRitualInsight(null);
+    setRitualsLoading(false);
     setBaselineScore(null);
     setBaselineStabilityPct(null);
     setBaselineResonanceScore(null);
@@ -596,13 +612,13 @@ export default function App() {
   };
 
   // ─── Daily check-in ─────────────────────────────────────────────────────────
-  const handleCompleteCheckIn = async (vocalEffort: number, confidence: number, symptoms: string[], habitChecks: HabitCheckEntry[], demandLevel: number, notes: string) => {
+  const handleCompleteCheckIn = async (vocalEffort: number, confidence: number, symptoms: string[], habitChecks: HabitCheckEntry[], demandLevel: number, notes: string, supportArea: string) => {
     const roundedEffort = Math.round(vocalEffort);
     const today = new Date().toISOString().slice(0, 10);
 
     if (userId) {
       await supabase.from('daily_checkins').upsert(
-        { user_id: userId, date: today, vocal_effort: roundedEffort, voice_confidence: confidence, voice_demand_level: demandLevel, symptoms, notes },
+        { user_id: userId, date: today, vocal_effort: roundedEffort, voice_confidence: confidence, voice_demand_level: demandLevel, symptoms, notes, support_area: supportArea },
         { onConflict: 'user_id,date' }
       );
 
@@ -632,6 +648,34 @@ export default function App() {
       ]);
     }
     addNotification('Daily check-in complete', postCheckInTrigger(userId ?? 'preview', roundedEffort, symptoms).body);
+
+    setRitualsLoading(true);
+    // Enforce a minimum visible loading time so the "AI is building your routine" animation
+    // never just flashes — the deterministic fallback path especially can resolve near-instantly.
+    const minDelay = new Promise(resolve => setTimeout(resolve, 1400));
+    const [selection] = await Promise.all([
+      selectRituals(
+        userId ?? 'preview',
+        { role: userRole || null, experienceLevel, primaryGoal: goals[0] ?? null, voiceBarrier },
+        { vocalEffort: roundedEffort, demandLevel, vocalConfidence: confidence, symptoms, supportArea, notes },
+        activePrepEvent ? { tailoredRitualIds: activePrepEvent.tailoredRitualIds } : null,
+      ),
+      minDelay,
+    ]);
+    setRitualsLoading(false);
+
+    if (selection.status === 'escalate') {
+      setSelectedRitualIds([]);
+      setRitualInsight(null);
+      addNotification('Take it easy today', 'Your check-in suggests it may be worth checking in with a doctor or voice professional before practicing rituals today.');
+    } else {
+      const ritualIds = selection.rituals.map(r => r.id);
+      setSelectedRitualIds(ritualIds);
+      setRitualInsight(selection.insight);
+      if (userId) {
+        await supabase.from('daily_checkins').update({ selected_ritual_ids: ritualIds, ritual_insight: selection.insight ?? '' }).eq('user_id', userId).eq('date', today);
+      }
+    }
   };
 
   // Dev/testing helper — clears today's check-in so the flow can be re-run same-day
@@ -645,6 +689,9 @@ export default function App() {
     setTodayVocalConfidence(null);
     setTodayVoiceDemandLevel(null);
     setTodaySymptoms([]);
+    setSelectedRitualIds(null);
+    setRitualInsight(null);
+    setRitualsLoading(false);
   };
 
   const handleResetWeeklyCheckIn = async () => {
@@ -689,7 +736,9 @@ export default function App() {
     })
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0] ?? null;
 
-  const dailyRitualIds = activePrepEvent ? activePrepEvent.tailoredRitualIds : DEFAULT_DAILY_RITUAL_IDS;
+  // No default ritual list anymore — rituals are only assigned once selectRituals runs, right
+  // after today's check-in (or from an active prep event's tailored plan, which always wins).
+  const dailyRitualIds = activePrepEvent ? activePrepEvent.tailoredRitualIds : (selectedRitualIds ?? []);
 
   const activePrepEventSummary = activePrepEvent
     ? {
@@ -844,6 +893,7 @@ export default function App() {
         setCurrentView={(view) => setCurrentView(view)}
         notifications={notifications}
         onClearNotifications={clearNotifications}
+        onDismissNotification={dismissNotification}
         onSignOut={handleSignOut}
         onOpenProfile={() => setCurrentView('profile')}
       />
@@ -912,6 +962,8 @@ export default function App() {
             onCompleteRitual={handleCompleteRitual}
             onRestartRoutine={handleRestartRoutine}
             checkInDone={checkInDone}
+            ritualsLoading={ritualsLoading}
+            ritualInsight={ritualInsight}
             habitPairs={userHabits}
             onCompleteCheckIn={handleCompleteCheckIn}
             onResetCheckIn={handleResetCheckIn}
@@ -1027,9 +1079,7 @@ export default function App() {
                       </div>
                     ) : (
                       <div>
-                        <p className="text-[9px] font-mono uppercase tracking-widest text-[#21e8ff]/60 mb-1">Jun 23 – Jun 29</p>
-                        <h4 className="text-[13px] font-medium text-zinc-200 group-hover:text-white transition-colors duration-200">Weekly Report</h4>
-                        <p className="text-[10px] text-zinc-500 mt-0.5">6/7 check-ins · 19/21 rituals</p>
+                        <WeeklyReportSummary userId={userId} dailyRitualIds={dailyRitualIds} />
                       </div>
                     )}
                     <div

@@ -85,14 +85,16 @@ interface RitualsPageProps {
   onCompleteRitual: (id: string, feelingRating: number | null, difficultyRating: number | null) => void;
   onRestartRoutine: () => void;
   checkInDone: boolean;
+  ritualsLoading?: boolean;
+  ritualInsight?: string | null;
   habitPairs: HabitPair[];
-  onCompleteCheckIn: (vocalEffort: number, confidence: number, symptoms: string[], habitChecks: HabitCheckEntry[], demandLevel: number, notes: string) => void;
+  onCompleteCheckIn: (vocalEffort: number, confidence: number, symptoms: string[], habitChecks: HabitCheckEntry[], demandLevel: number, notes: string, supportArea: string) => void;
   onResetCheckIn?: () => void;
   autoStart?: boolean;
   onAutoStartConsumed?: () => void;
 }
 
-export default function RitualsPage({ dailyRitualIds, activePrepEvent, completedRitualIds, onCompleteRitual, onRestartRoutine, checkInDone, habitPairs, onCompleteCheckIn, onResetCheckIn, autoStart, onAutoStartConsumed }: RitualsPageProps) {
+export default function RitualsPage({ dailyRitualIds, activePrepEvent, completedRitualIds, onCompleteRitual, onRestartRoutine, checkInDone, ritualsLoading, ritualInsight, habitPairs, onCompleteCheckIn, onResetCheckIn, autoStart, onAutoStartConsumed }: RitualsPageProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedRitual, setSelectedRitual] = useState<Ritual | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -108,7 +110,7 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
   const [checkInNotes, setCheckInNotes] = useState('');
   const [checkInVocalEffort, setCheckInVocalEffort] = useState(5);
   const [checkInDemandLevel, setCheckInDemandLevel] = useState(3);
-  const [checkInSupportAreas, setCheckInSupportAreas] = useState<string[]>([]);
+  const [checkInSupportArea, setCheckInSupportArea] = useState<string | null>(null);
   const [checkInStep, setCheckInStep] = useState<1 | 2 | 3>(1);
   const [habitChecks, setHabitChecks] = useState<Record<string, boolean | null>>({});
   const [ritualFeedbackId, setRitualFeedbackId] = useState<string | null>(null);
@@ -137,17 +139,18 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
     setCheckInNotes('');
     setCheckInVocalEffort(5);
     setCheckInDemandLevel(3);
-    setCheckInSupportAreas([]);
+    setCheckInSupportArea(null);
     setHabitChecks({});
   };
 
   const stepSubtitle = checkInStep === 1 ? 'How is your voice feeling today?' : checkInStep === 2 ? 'Anything to note?' : 'Did you complete your habits?';
 
   const handleLogCheckIn = () => {
+    if (!checkInSupportArea) return;
     const habitCheckEntries: HabitCheckEntry[] = CHECK_IN_HABITS
       .filter(h => habitChecks[h.id] !== null && habitChecks[h.id] !== undefined)
       .map(h => ({ daily: h.daily, vocal: h.id, completed: habitChecks[h.id] as boolean }));
-    onCompleteCheckIn(checkInVocalEffort, checkInConfidence, checkInSymptoms, habitCheckEntries, checkInDemandLevel, checkInNotes);
+    onCompleteCheckIn(checkInVocalEffort, checkInConfidence, checkInSymptoms, habitCheckEntries, checkInDemandLevel, checkInNotes, checkInSupportArea);
     closeCheckIn();
   };
 
@@ -293,6 +296,23 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
 
           <div className={`absolute -right-10 -bottom-10 w-44 h-44 rounded-full blur-[40px] pointer-events-none group-hover:scale-110 transition-transform duration-700 ${activePrepEvent ? 'bg-[#3b82f6]/20' : 'bg-[#17A9C9]/10'}`} />
 
+          <AnimatePresence>
+            {ritualsLoading && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[30px]"
+                style={{ background: 'rgba(10,12,17,0.82)', backdropFilter: 'blur(6px)' }}
+              >
+                <span className={`text-[11px] font-mono tracking-[0.2em] uppercase ${activePrepEvent ? 'text-[#60a5fa]' : 'text-[#21e8ff]'}`}>
+                  Building your routine...
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
             <div className="flex items-start gap-4 pl-2">
               <div className="flex flex-col">
@@ -313,7 +333,9 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                   </div>
                 )}
                 <p className="text-[11.5px] text-zinc-400 max-w-2xl leading-relaxed mb-3">
-                  Complete your personalized voice exercises and daily check-in to build healthier vocal habits and track your progress.
+                  {checkInDone && ritualInsight
+                    ? ritualInsight
+                    : 'Complete your personalized voice exercises and daily check-in to build healthier vocal habits and track your progress.'}
                 </p>
                 <div className="flex items-center gap-2.5 flex-wrap">
                   {/* Daily Check-In Button */}
@@ -676,7 +698,7 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
 
                     {/* Support areas */}
                     <div>
-                      <span className="text-[11px] font-light uppercase tracking-[0.18em] block mb-3" style={{ color: `${modalAccentHex}b3` }}>What area needs support today?</span>
+                      <span className="text-[11px] font-light uppercase tracking-[0.18em] block mb-3" style={{ color: `${modalAccentHex}b3` }}>What area needs support today? <span className="text-white/70 normal-case tracking-normal">*</span></span>
                       <div className="flex justify-between gap-1">
                         {[
                           { label: 'Breath & fatigue', icon: <Wind className="w-5 h-5" /> },
@@ -685,11 +707,11 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                           { label: 'Confidence', icon: <Sparkles className="w-5 h-5" /> },
                           { label: 'Recovery', icon: <Clock className="w-5 h-5" /> },
                         ].map(({ label, icon }) => {
-                          const active = checkInSupportAreas.includes(label);
+                          const active = checkInSupportArea === label;
                           return (
                             <motion.button
                               key={label}
-                              onClick={() => setCheckInSupportAreas(prev => active ? prev.filter(a => a !== label) : [...prev, label])}
+                              onClick={() => setCheckInSupportArea(active ? null : label)}
                               whileTap={{ scale: 0.88 }}
                               transition={{ duration: 0.1 }}
                               className="flex flex-col items-center gap-2 cursor-pointer"
@@ -716,7 +738,7 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                     </div>
 
                     <div>
-                      <span className="text-[11px] font-light uppercase tracking-[0.18em] block mb-2" style={{ color: `${modalAccentHex}b3` }}>Notes</span>
+                      <span className="text-[11px] font-light uppercase tracking-[0.18em] block mb-2" style={{ color: `${modalAccentHex}b3` }}>Notes <span className="text-zinc-600 font-light"> (optional)</span></span>
                       <textarea
                         value={checkInNotes}
                         onChange={e => setCheckInNotes(e.target.value)}
@@ -737,8 +759,9 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                         Back
                       </button>
                       <button
-                        onClick={() => setCheckInStep(3)}
-                        className="relative overflow-hidden flex-1 py-3.5 rounded-xl flex items-center justify-center gap-2 cursor-pointer group/submit transition-all duration-300"
+                        onClick={() => checkInSupportArea && setCheckInStep(3)}
+                        disabled={!checkInSupportArea}
+                        className="relative overflow-hidden flex-1 py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer group/submit"
                         style={{
                           background: `linear-gradient(135deg, rgba(${modalAccentRGB},0.22) 0%, rgba(${modalAccentBrightRGB},0.10) 100%)`,
                           border: `1px solid rgba(${modalAccentBrightRGB},0.5)`,
@@ -1449,49 +1472,49 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
 
                   {/* View Details + Exit — hidden while post-ritual feedback is active */}
                   {!ritualCompleted && (
-                  <div className="px-8 pb-8 pt-2 mt-auto relative z-10">
-                    <div className="h-px mb-4" style={{ background: `linear-gradient(to right, transparent, ${heroTheme.accent}20, transparent)` }} />
-                    <div className="flex gap-3">
-                      <button
-                        onClick={viewDetails}
-                        className="flex-1 py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer group/details"
-                        style={{
-                          background: 'rgba(255,255,255,0.03)',
-                          border: '1px solid rgba(255,255,255,0.08)',
-                        }}
-                        onMouseEnter={e => {
-                          (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)';
-                          (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(255,255,255,0.14)';
-                        }}
-                        onMouseLeave={e => {
-                          (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.03)';
-                          (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(255,255,255,0.08)';
-                        }}
-                      >
-                        <span className="text-[11px] font-mono uppercase tracking-[0.18em] text-zinc-300 group-hover/details:text-white transition-colors duration-200">
-                          View Details
-                        </span>
-                      </button>
-                      <button
-                        onClick={exitActivity}
-                        className="py-3.5 px-4 rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer group/exit"
-                        style={{
-                          background: 'rgba(255,255,255,0.03)',
-                          border: '1px solid rgba(255,255,255,0.08)',
-                        }}
-                        onMouseEnter={e => {
-                          (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.08)';
-                          (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(239,68,68,0.25)';
-                        }}
-                        onMouseLeave={e => {
-                          (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.03)';
-                          (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(255,255,255,0.08)';
-                        }}
-                      >
-                        <X className="w-3.5 h-3.5 text-zinc-400 group-hover/exit:text-red-400 transition-colors duration-200" />
-                      </button>
+                    <div className="px-8 pb-8 pt-2 mt-auto relative z-10">
+                      <div className="h-px mb-4" style={{ background: `linear-gradient(to right, transparent, ${heroTheme.accent}20, transparent)` }} />
+                      <div className="flex gap-3">
+                        <button
+                          onClick={viewDetails}
+                          className="flex-1 py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer group/details"
+                          style={{
+                            background: 'rgba(255,255,255,0.03)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                          }}
+                          onMouseEnter={e => {
+                            (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)';
+                            (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(255,255,255,0.14)';
+                          }}
+                          onMouseLeave={e => {
+                            (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.03)';
+                            (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(255,255,255,0.08)';
+                          }}
+                        >
+                          <span className="text-[11px] font-mono uppercase tracking-[0.18em] text-zinc-300 group-hover/details:text-white transition-colors duration-200">
+                            View Details
+                          </span>
+                        </button>
+                        <button
+                          onClick={exitActivity}
+                          className="py-3.5 px-4 rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer group/exit"
+                          style={{
+                            background: 'rgba(255,255,255,0.03)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                          }}
+                          onMouseEnter={e => {
+                            (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.08)';
+                            (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(239,68,68,0.25)';
+                          }}
+                          onMouseLeave={e => {
+                            (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.03)';
+                            (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(255,255,255,0.08)';
+                          }}
+                        >
+                          <X className="w-3.5 h-3.5 text-zinc-400 group-hover/exit:text-red-400 transition-colors duration-200" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
                   )}
                 </div>
               </div>

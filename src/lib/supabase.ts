@@ -107,6 +107,9 @@ export type Database = {
           voice_demand_level: number | null;
           symptoms: string[];
           notes: string;
+          support_area: string;
+          selected_ritual_ids: string[];
+          ritual_insight: string;
           created_at: string;
         };
         Insert: {
@@ -117,6 +120,9 @@ export type Database = {
           voice_demand_level?: number | null;
           symptoms?: string[];
           notes?: string;
+          support_area: string;
+          selected_ritual_ids?: string[];
+          ritual_insight?: string;
         };
         Update: {
           vocal_effort?: number;
@@ -124,6 +130,9 @@ export type Database = {
           voice_demand_level?: number | null;
           symptoms?: string[];
           notes?: string;
+          support_area?: string;
+          selected_ritual_ids?: string[];
+          ritual_insight?: string;
         };
         Relationships: [];
       };
@@ -343,6 +352,30 @@ export type Database = {
           trait_question_2?: number | null;
           voice_confidence?: number | null;
           reflection?: string | null;
+        };
+        Relationships: [];
+      };
+      weekly_report_insights: {
+        Row: {
+          id: string;
+          user_id: string;
+          week_start: string;
+          overview: string;
+          what_improved: string;
+          needs_attention: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          week_start: string;
+          overview: string;
+          what_improved: string;
+          needs_attention: string;
+        };
+        Update: {
+          overview?: string;
+          what_improved?: string;
+          needs_attention?: string;
         };
         Relationships: [];
       };

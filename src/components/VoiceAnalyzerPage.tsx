@@ -99,6 +99,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
 
   const [formFeelings, setFormFeelings] = useState<string[]>([]);
   const [formNotes, setFormNotes] = useState('');
+  const [savingInsight, setSavingInsight] = useState(false);
   const [notesFocused, setNotesFocused] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
   const logScrollRef = useRef<HTMLDivElement>(null);
@@ -264,9 +265,34 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     }, 2200);
   };
 
-  const handleSave = () => {
-    if (!metrics) return;
-    const insight = generateInsight(metrics);
+  const handleSave = async () => {
+    if (!metrics || savingInsight) return;
+    setSavingInsight(true);
+    let insight: string;
+    try {
+      const res = await fetch('/api/voice-report-insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pitchHz: metrics.pitchHz,
+          pitchRangeHz: metrics.pitchRangeHz,
+          resonanceScore: metrics.resonanceScore,
+          clarityPct: metrics.clarityPct,
+          loudnessDb: metrics.loudnessDb,
+          stabilityPct: metrics.stabilityPct,
+          fatigueEstimate: metrics.fatigueEstimate,
+          feelings: formFeelings,
+          notes: formNotes,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || typeof data.insight !== 'string') throw new Error('bad response');
+      insight = data.insight;
+    } catch {
+      insight = generateInsight(metrics);
+    }
+    setSavingInsight(false);
+
     const now = new Date();
     const autoName = `Vocal Report — ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
     onSave({
@@ -762,13 +788,14 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
                   </div>
                   <motion.button
                     onClick={handleSave}
-                    whileHover={{ scale: 1.02, boxShadow: '0 0 40px rgba(33,232,255,0.35)' }}
-                    whileTap={{ scale: 0.97 }}
+                    disabled={savingInsight}
+                    whileHover={savingInsight ? undefined : { scale: 1.02, boxShadow: '0 0 40px rgba(33,232,255,0.35)' }}
+                    whileTap={savingInsight ? undefined : { scale: 0.97 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-                    className="w-full py-4 rounded-2xl text-[11px] font-mono tracking-widest uppercase cursor-pointer"
+                    className="w-full py-4 rounded-2xl text-[11px] font-mono tracking-widest uppercase cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                     style={{ background: 'linear-gradient(135deg, rgba(23,169,201,0.3) 0%, rgba(33,232,255,0.12) 100%)', border: '1px solid rgba(33,232,255,0.55)', color: '#21e8ff', boxShadow: '0 0 24px rgba(33,232,255,0.18)' }}
                   >
-                    Save Report
+                    {savingInsight ? 'Analyzing...' : 'Save Report'}
                   </motion.button>
                 </motion.div>
 
