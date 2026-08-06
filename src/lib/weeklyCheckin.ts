@@ -96,3 +96,31 @@ export function getReflectionWeekStart(today: Date = new Date()): string {
   const start = isSunday ? thisMonday : new Date(thisMonday.getTime() - 7 * 86400000);
   return start.toISOString().slice(0, 10);
 }
+
+const MIN_ACCOUNT_AGE_FOR_WEEKLY_DAYS = 3;
+
+function addDaysIso(iso: string, days: number): string {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Earliest date (YYYY-MM-DD) a new user can be shown the weekly check-in/report: at least
+// MIN_ACCOUNT_AGE_FOR_WEEKLY_DAYS days old AND on/after the first Sunday since signup, whichever
+// is later — so someone who signs up right before a Sunday still waits for a real first week, and
+// someone who just missed a Sunday isn't stuck waiting almost a full week beyond the 3-day floor.
+export function weeklyEligibleDateIso(signupIso: string): string {
+  const minAgeIso = addDaysIso(signupIso, MIN_ACCOUNT_AGE_FOR_WEEKLY_DAYS);
+  const signupDow = new Date(signupIso + 'T00:00:00').getDay();
+  const daysToFirstSunday = (7 - signupDow) % 7; // 0 if signup day itself is Sunday
+  const firstSundayIso = addDaysIso(signupIso, daysToFirstSunday);
+  return minAgeIso > firstSundayIso ? minAgeIso : firstSundayIso; // ISO dates compare lexically
+}
+
+// Days remaining (0 = eligible today) until the weekly check-in/report can be shown.
+export function daysUntilWeeklyEligible(signupIso: string, todayIso: string = new Date().toISOString().slice(0, 10)): number {
+  const eligibleIso = weeklyEligibleDateIso(signupIso);
+  const eligible = new Date(eligibleIso + 'T00:00:00');
+  const today = new Date(todayIso + 'T00:00:00');
+  return Math.max(0, Math.round((eligible.getTime() - today.getTime()) / 86400000));
+}

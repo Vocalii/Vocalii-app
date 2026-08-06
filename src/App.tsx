@@ -21,7 +21,7 @@ import WeeklyCheckInPage from './components/WeeklyCheckInPage';
 import WeeklyReportSummary from './components/WeeklyReportSummary';
 import { selectRituals } from './lib/ritualSelection';
 import WeeklyReportLoadingScreen from './components/WeeklyReportLoadingScreen';
-import { getReflectionWeekStart } from './lib/weeklyCheckin';
+import { getReflectionWeekStart, daysUntilWeeklyEligible } from './lib/weeklyCheckin';
 import ProfilePage, { type ProfileUpdates } from './components/ProfilePage';
 import { DESTINATIONS } from './data';
 import { Destination, Attraction, Message, Ritual } from './types';
@@ -156,6 +156,7 @@ export default function App() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [voiceBarrier, setVoiceBarrier] = useState<VoiceBarrier | null>(null);
   const [weeklyCheckinDue, setWeeklyCheckinDue] = useState(false);
+  const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null);
   const [reflectionWeekStart, setReflectionWeekStart] = useState('');
   const [userHabits, setUserHabits] = useState<{ daily: string; vocal: string }[]>([]);
   const [habitCompletions, setHabitCompletions] = useState<{ date: string; daily_habit: string; vocal_habit: string; completed: boolean }[]>([]);
@@ -242,6 +243,7 @@ export default function App() {
     setWeeklyCheckinDue(!weeklyCheckinRow);
 
     if (profile?.onboarding_complete) {
+      setAccountCreatedAt(profile.created_at ?? null);
       setUserName(profile.first_name);
       setUserLastName(profile.last_name);
       setUserRole(profile.role || '');
@@ -443,6 +445,7 @@ export default function App() {
     setGoals(data.goals);
     setVoiceBarrier(data.voiceBarrier);
     setUserHabits(data.habitPairs);
+    setAccountCreatedAt(new Date().toISOString());
     setOnboardingDone(true);
   };
 
@@ -756,6 +759,12 @@ export default function App() {
   // after today's check-in (or from an active prep event's tailored plan, which always wins).
   const dailyRitualIds = activePrepEvent ? activePrepEvent.tailoredRitualIds : (selectedRitualIds ?? []);
 
+  // New accounts haven't accumulated a real week of data yet — hold off on the weekly
+  // check-in/report prompt until then rather than asking someone to "reflect on this week"
+  // a day or two after signing up.
+  const weeklyDaysRemaining = accountCreatedAt ? daysUntilWeeklyEligible(accountCreatedAt.slice(0, 10)) : 0;
+  const weeklyNeedsMoreData = weeklyDaysRemaining > 0;
+
   const activePrepEventSummary = activePrepEvent
     ? {
         title: activePrepEvent.title,
@@ -1063,12 +1072,15 @@ export default function App() {
               </div>
 
               <button
-                onClick={() => setCurrentView(weeklyCheckinDue ? 'weekly-checkin' : 'weekly-report')}
-                className="w-full text-left group cursor-pointer"
+                onClick={() => { if (!weeklyNeedsMoreData) setCurrentView(weeklyCheckinDue ? 'weekly-checkin' : 'weekly-report'); }}
+                className={`w-full text-left group ${weeklyNeedsMoreData ? 'cursor-default opacity-60' : 'cursor-pointer'}`}
               >
                 <motion.div
-                  className="relative overflow-hidden rounded-[24px] px-5 py-4 border transition-colors duration-300 group-hover:border-[#17A9C9]/40"
-                  style={weeklyCheckinDue ? {
+                  className={`relative overflow-hidden rounded-[24px] px-5 py-4 border transition-colors duration-300 ${weeklyNeedsMoreData ? '' : 'group-hover:border-[#17A9C9]/40'}`}
+                  style={weeklyNeedsMoreData ? {
+                    background: 'rgba(255,255,255,0.03)',
+                    borderColor: 'rgba(255,255,255,0.08)',
+                  } : weeklyCheckinDue ? {
                     background: 'linear-gradient(135deg, rgba(23,169,201,0.16) 0%, rgba(23,169,201,0.05) 100%)',
                     borderColor: 'rgba(33,232,255,0.35)',
                   } : {
@@ -1076,7 +1088,7 @@ export default function App() {
                     borderColor: 'rgba(33,232,255,0.15)',
                     boxShadow: '0 0 28px rgba(23,169,201,0.05)',
                   }}
-                  animate={weeklyCheckinDue ? {
+                  animate={weeklyNeedsMoreData ? undefined : weeklyCheckinDue ? {
                     y: [0, -1.5, 0],
                     boxShadow: [
                       '0 0 20px rgba(33,232,255,0.18)',
@@ -1084,11 +1096,17 @@ export default function App() {
                       '0 0 20px rgba(33,232,255,0.18)',
                     ],
                   } : undefined}
-                  transition={weeklyCheckinDue ? { duration: 3, repeat: Infinity, ease: 'easeInOut' } : undefined}
+                  transition={!weeklyNeedsMoreData && weeklyCheckinDue ? { duration: 3, repeat: Infinity, ease: 'easeInOut' } : undefined}
                 >
-                  <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent to-transparent" style={{ background: `linear-gradient(90deg, transparent, rgba(33,232,255,${weeklyCheckinDue ? 0.4 : 0.15}), transparent)` }} />
+                  <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent to-transparent" style={{ background: weeklyNeedsMoreData ? 'none' : `linear-gradient(90deg, transparent, rgba(33,232,255,${weeklyCheckinDue ? 0.4 : 0.15}), transparent)` }} />
                   <div className="flex items-center justify-between">
-                    {weeklyCheckinDue ? (
+                    {weeklyNeedsMoreData ? (
+                      <div>
+                        <p className="text-[9px] font-mono uppercase tracking-widest text-zinc-500 mb-1">More Data Needed</p>
+                        <h4 className="text-[13px] font-medium text-zinc-300">Weekly Check-In</h4>
+                        <p className="text-[10px] text-zinc-500 mt-0.5">{weeklyDaysRemaining} day{weeklyDaysRemaining === 1 ? '' : 's'} until your first weekly check-in</p>
+                      </div>
+                    ) : weeklyCheckinDue ? (
                       <div>
                         <p className="text-[9px] font-mono uppercase tracking-widest text-[#21e8ff]/60 mb-1">Due this week</p>
                         <h4 className="text-[13px] font-medium text-zinc-200 group-hover:text-white transition-colors duration-200">Weekly Check-In</h4>
@@ -1100,10 +1118,12 @@ export default function App() {
                       </div>
                     )}
                     <div
-                      className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-200 group-hover:scale-105"
-                      style={{ background: 'rgba(33,232,255,0.1)', border: '1px solid rgba(33,232,255,0.2)' }}
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-200 ${weeklyNeedsMoreData ? '' : 'group-hover:scale-105'}`}
+                      style={weeklyNeedsMoreData
+                        ? { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }
+                        : { background: 'rgba(33,232,255,0.1)', border: '1px solid rgba(33,232,255,0.2)' }}
                     >
-                      <ArrowRight className="w-4 h-4 text-[#21e8ff]" />
+                      <ArrowRight className={`w-4 h-4 ${weeklyNeedsMoreData ? 'text-zinc-600' : 'text-[#21e8ff]'}`} />
                     </div>
                   </div>
                 </motion.div>
