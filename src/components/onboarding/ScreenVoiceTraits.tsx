@@ -36,11 +36,11 @@ export const TRAIT_DESCRIPTIONS: Record<string, string> = {
 
 // Short mantra shown under the trait description on the dashboard
 export const TRAIT_QUOTES: Record<string, string> = {
-  Confident: 'Speak like you already believe it.',
-  Calm: 'Let your breath lead before your words do.',
-  Clear: 'Say less, but say it clean.',
-  Warm: 'Let people feel welcomed in your tone.',
-  Engaging: 'Bring the energy you want them to catch.',
+  Confident: 'I want to trust my voice.',
+  Calm: 'I want to stay grounded while I speak.',
+  Clear: 'I want my message to come through effortlessly.',
+  Warm: 'I want people to feel welcomed by my tone.',
+  Engaging: 'I want my energy to be contagious.',
 };
 
 export const TRAITS: { label: string; subtitle: string; emoji: string; glowPos: React.CSSProperties }[] = [

@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
-import { EXERCISE_RITUALS } from './src/ritualsData';
+import { EXERCISE_RITUALS } from './src/ritualsData.js';
 
 const PORT = 3000;
 
