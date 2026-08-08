@@ -4,16 +4,23 @@ import App from './App.tsx';
 import {loadRitualsFromSanity} from './ritualsData.ts';
 import {loadHabitsFromSanity} from './habitsData.ts';
 import {loadTraitsFromSanity} from './traitsData.ts';
+import {loadRecordingPromptsFromSanity} from './lib/recordingPrompts.ts';
 import './index.css';
 
 // Kicks off the live content fetches before the app renders, so components that read
-// EXERCISE_RITUALS/DAILY_HABITS/VOCAL_HABITS/TRAITS synchronously on first render already see
-// Sanity's data rather than the static fallback. All three are internally time-boxed (each
-// loader's own timeout), so a slow/offline Sanity delays boot briefly rather than hanging — none
-// of them throw. Wrapped in an async IIFE rather than a top-level await: Vite's production build
-// targets browser/esbuild versions that don't support top-level await syntax at all.
+// EXERCISE_RITUALS/DAILY_HABITS/VOCAL_HABITS/TRAITS/READ_ALOUD_PHRASES/FREE_SPEECH_PROMPTS
+// synchronously on first render already see Sanity's data rather than the static fallback. All
+// four are internally time-boxed (each loader's own timeout), so a slow/offline Sanity delays
+// boot briefly rather than hanging — none of them throw. Wrapped in an async IIFE rather than a
+// top-level await: Vite's production build targets browser/esbuild versions that don't support
+// top-level await syntax at all.
 (async () => {
-  await Promise.all([loadRitualsFromSanity(), loadHabitsFromSanity(), loadTraitsFromSanity()]);
+  await Promise.all([
+    loadRitualsFromSanity(),
+    loadHabitsFromSanity(),
+    loadTraitsFromSanity(),
+    loadRecordingPromptsFromSanity(),
+  ]);
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
