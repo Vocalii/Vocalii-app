@@ -1,7 +1,7 @@
 import { useState, Fragment } from 'react';
 import { MapPin, Sparkles, Flame, Quote } from 'lucide-react';
 import { Destination } from '../types';
-import { TRAIT_DESCRIPTIONS, TRAIT_COLORS, TRAIT_QUOTES } from './onboarding/ScreenVoiceTraits';
+import { TRAIT_DESCRIPTIONS, TRAIT_COLORS, TRAIT_QUOTES } from '../traitsData';
 
 interface HeroSectionProps {
   destination: Destination;

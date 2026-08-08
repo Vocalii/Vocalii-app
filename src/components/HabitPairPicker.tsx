@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { HabitPair } from '../types/onboarding';
-import { DAILY_HABITS, VOCAL_HABITS } from './onboarding/ScreenHabits';
+import { DAILY_HABITS, VOCAL_HABITS } from '../habitsData';
 
 const SELECTED_STYLE = (color = '#21e8ff') => ({
   background: `linear-gradient(135deg, ${color}20 0%, ${color}08 100%)`,
@@ -44,44 +44,56 @@ export default function HabitPairPicker({ value, onChange }: Props) {
       <div className="grid grid-cols-2 gap-6">
         <div>
           <span className="text-[9px] font-mono uppercase tracking-widest text-zinc-500 block mb-2.5 text-center">Daily habits</span>
-          <div className="flex flex-col gap-2">
-            {DAILY_HABITS.map(h => {
-              const isPaired = pairedDailyIds.has(h.id);
-              const isPending = pendingDaily === h.id;
-              return (
-                <button
-                  key={h.id}
-                  disabled={isPaired}
-                  onClick={() => handleDailyClick(h.id)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all duration-150 disabled:cursor-default disabled:opacity-35 cursor-pointer"
-                  style={isPending ? SELECTED_STYLE() : UNSELECTED_STYLE}
-                >
-                  <span className="text-base leading-none">{h.emoji}</span>
-                  <span className="text-[11.5px]" style={{ color: isPending ? '#fff' : '#a1a1aa' }}>{h.label}</span>
-                </button>
-              );
-            })}
+          {/* dir="rtl" moves the scrollbar to the left edge; the inner dir="ltr" wrapper keeps the
+              buttons' own content (icon, then label) laid out normally. */}
+          <div
+            dir="rtl"
+            className="max-h-[240px] overflow-y-auto overscroll-contain pl-1 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-zinc-600/40 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:h-6"
+          >
+            <div dir="ltr" className="flex flex-col gap-2">
+              {DAILY_HABITS.map(h => {
+                const isPaired = pairedDailyIds.has(h.id);
+                const isPending = pendingDaily === h.id;
+                return (
+                  <button
+                    key={h.id}
+                    disabled={isPaired}
+                    onClick={() => handleDailyClick(h.id)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all duration-150 disabled:cursor-default disabled:opacity-35 cursor-pointer"
+                    style={isPending ? SELECTED_STYLE() : UNSELECTED_STYLE}
+                  >
+                    <span className="text-base leading-none">{h.emoji}</span>
+                    <span className="text-[11.5px]" style={{ color: isPending ? '#fff' : '#a1a1aa' }}>{h.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
         <div>
           <span className="text-[9px] font-mono uppercase tracking-widest text-zinc-500 block mb-2.5 text-center">Vocal habits</span>
-          <div className="flex flex-col gap-2">
-            {VOCAL_HABITS.map(h => {
-              const isPaired = pairedVocalIds.has(h.id);
-              const isClickable = !!pendingDaily && !isPaired;
-              return (
-                <button
-                  key={h.id}
-                  disabled={isPaired || !pendingDaily}
-                  onClick={() => handleVocalClick(h.id)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all duration-150 disabled:cursor-default cursor-pointer"
-                  style={isPaired ? { ...UNSELECTED_STYLE, opacity: 0.35 } : isClickable ? SELECTED_STYLE('#3b82f6') : { ...UNSELECTED_STYLE, opacity: 0.5 }}
-                >
-                  <span className="text-base leading-none">{h.emoji}</span>
-                  <span className="text-[11.5px]" style={{ color: isClickable ? '#93c5fd' : '#71717a' }}>{h.label}</span>
-                </button>
-              );
-            })}
+          <div
+            dir="rtl"
+            className="max-h-[240px] overflow-y-auto overscroll-contain pl-1 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-zinc-600/40 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:h-6"
+          >
+            <div dir="ltr" className="flex flex-col gap-2">
+              {VOCAL_HABITS.map(h => {
+                const isPaired = pairedVocalIds.has(h.id);
+                const isClickable = !!pendingDaily && !isPaired;
+                return (
+                  <button
+                    key={h.id}
+                    disabled={isPaired || !pendingDaily}
+                    onClick={() => handleVocalClick(h.id)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all duration-150 disabled:cursor-default cursor-pointer"
+                    style={isPaired ? { ...UNSELECTED_STYLE, opacity: 0.35 } : isClickable ? SELECTED_STYLE('#3b82f6') : { ...UNSELECTED_STYLE, opacity: 0.5 }}
+                  >
+                    <span className="text-base leading-none">{h.emoji}</span>
+                    <span className="text-[11.5px]" style={{ color: isClickable ? '#93c5fd' : '#71717a' }}>{h.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

@@ -5,9 +5,10 @@ import { Role, ExperienceLevel, Goal, VoiceBarrier, HabitPair } from '../types/o
 import { ROLES } from './onboarding/ScreenRole';
 import { LEVELS } from './onboarding/ScreenExperience';
 import { GOALS } from './onboarding/ScreenGoals';
-import { TRAITS, TRAIT_COLORS, TRAIT_QUOTES, VOICE_STATEMENT_MAX_LENGTH } from './onboarding/ScreenVoiceTraits';
+import { VOICE_STATEMENT_MAX_LENGTH } from './onboarding/ScreenVoiceTraits';
+import { TRAITS, TRAIT_COLORS, TRAIT_QUOTES } from '../traitsData';
 import { CLUSTERS } from './onboarding/ScreenVoiceBarriers';
-import { DAILY_HABITS, VOCAL_HABITS } from './onboarding/ScreenHabits';
+import { DAILY_HABITS, VOCAL_HABITS } from '../habitsData';
 import HabitPairPicker from './HabitPairPicker';
 
 export interface ProfileUpdates {

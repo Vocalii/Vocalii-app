@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { HabitPair } from '../../types/onboarding';
 import OnboardingLogo from './OnboardingLogo';
 import OnboardingStepProgress from './OnboardingStepProgress';
+import { DAILY_HABITS, VOCAL_HABITS } from '../../habitsData';
 
 interface Props {
   value: HabitPair[];
@@ -13,24 +14,6 @@ interface Props {
   step: number;
   totalSteps: number;
 }
-
-export const DAILY_HABITS = [
-  { id: 'morning_coffee', label: 'Morning coffee', emoji: '☕' },
-  { id: 'brush_teeth', label: 'Brushing teeth', emoji: '🪥' },
-  { id: 'morning_shower', label: 'Morning shower', emoji: '🚿' },
-  { id: 'lunch_break', label: 'Lunch break', emoji: '🍽️' },
-  { id: 'evening_walk', label: 'Evening walk', emoji: '🚶' },
-  { id: 'bedtime_routine', label: 'Bedtime routine', emoji: '🌙' },
-];
-
-export const VOCAL_HABITS = [
-  { id: 'drink_water', label: 'Drink a glass of water', emoji: '💧' },
-  { id: 'vocal_hum', label: '2-min vocal hum', emoji: '🎵' },
-  { id: 'lip_trill', label: 'Lip trill exercise', emoji: '💋' },
-  { id: 'deep_breath', label: 'Deep breathing', emoji: '🌬️' },
-  { id: 'jaw_stretch', label: 'Neck & jaw stretch', emoji: '🧘' },
-  { id: 'silent_rest', label: 'Silent rest (2 min)', emoji: '🤫' },
-];
 
 const MIN_PAIRS = 3;
 

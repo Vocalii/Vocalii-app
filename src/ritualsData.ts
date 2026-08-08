@@ -1,6 +1,10 @@
 import { Ritual } from './types.js';
 
-export const EXERCISE_RITUALS: Ritual[] = [
+// Static safety net — used until (or unless) loadRitualsFromSanity() successfully populates
+// EXERCISE_RITUALS below. Sanity ("Rituals" content type, project j8ce9qq6 / dataset vocalii)
+// is now the source of truth for this content; this array only guards against Sanity being
+// unreachable, slow, or briefly empty.
+const FALLBACK_RITUALS: Ritual[] = [
   {
     id: 'body-scan-grounding-reset',
     name: 'Body Scan Grounding Reset',
@@ -478,3 +482,89 @@ export const EXERCISE_RITUALS: Ritual[] = [
     ]
   },
 ];
+
+// Mutable — populated from FALLBACK_RITUALS at module load, then swapped in place by
+// loadRitualsFromSanity() below. Every existing `EXERCISE_RITUALS.find/map/filter(...)` call site
+// across the app holds a reference to this same array, so mutating its contents (rather than
+// reassigning the export) means none of them need to change to pick up live data.
+export const EXERCISE_RITUALS: Ritual[] = [...FALLBACK_RITUALS];
+
+const SANITY_PROJECT_ID = 'j8ce9qq6';
+const SANITY_DATASET = 'vocalii';
+const SANITY_API_VERSION = '2024-01-01';
+
+interface SanityMediaDoc {
+  mediaType: 'image' | 'video' | null;
+  imageUrl: string | null;
+  videoUrl: string | null;
+}
+
+interface SanityRitualDoc {
+  ritualId: string;
+  name: string;
+  category: Ritual['category'];
+  duration: string;
+  difficulty: Ritual['difficulty'];
+  description: string;
+  instructionSteps: string[];
+  primaryFocus: string;
+  benefits: string[];
+  overviewMedia: SanityMediaDoc | null;
+  playerMedia: SanityMediaDoc | null;
+}
+
+function mapMedia(doc: SanityMediaDoc | null): Ritual['overviewMedia'] {
+  if (!doc) return null;
+  const url = doc.mediaType === 'video' ? doc.videoUrl : doc.imageUrl;
+  if (!doc.mediaType || !url) return null;
+  return { type: doc.mediaType, url };
+}
+
+function mapSanityDoc(doc: SanityRitualDoc): Ritual {
+  return {
+    id: doc.ritualId,
+    name: doc.name,
+    category: doc.category,
+    duration: doc.duration,
+    difficulty: doc.difficulty,
+    description: doc.description,
+    instructionSteps: doc.instructionSteps,
+    primaryFocus: doc.primaryFocus,
+    benefits: doc.benefits,
+    overviewMedia: mapMedia(doc.overviewMedia),
+    playerMedia: mapMedia(doc.playerMedia),
+  };
+}
+
+// Plain fetch against Sanity's public read-only CDN query API — the "vocalii" dataset is public,
+// so this needs no API token and works identically in the browser and in server.ts (Node).
+// Media asset URLs are dereferenced (asset->url) directly in the GROQ query rather than in app
+// code, so the client only ever deals with plain strings.
+const RITUALS_QUERY = encodeURIComponent(
+  `*[_type == "ritual"] | order(name asc) {
+    ritualId, name, category, duration, difficulty, description, instructionSteps, primaryFocus, benefits,
+    overviewMedia { mediaType, "imageUrl": image.asset->url, "videoUrl": video.asset->url },
+    playerMedia { mediaType, "imageUrl": image.asset->url, "videoUrl": video.asset->url }
+  }`
+);
+
+// Fetches the live ritual library from Sanity and swaps EXERCISE_RITUALS' contents in place.
+// Never leaves EXERCISE_RITUALS empty: on any failure, timeout, or empty result, it silently
+// keeps whatever was already loaded (the FALLBACK_RITUALS seed on first boot).
+export async function loadRitualsFromSanity(timeoutMs = 4000): Promise<void> {
+  const url = `https://${SANITY_PROJECT_ID}.apicdn.sanity.io/v${SANITY_API_VERSION}/data/query/${SANITY_DATASET}?query=${RITUALS_QUERY}`;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`Sanity query failed: ${res.status}`);
+    const { result } = (await res.json()) as { result: SanityRitualDoc[] };
+    if (!Array.isArray(result) || result.length === 0) return;
+    const mapped = result.map(mapSanityDoc);
+    EXERCISE_RITUALS.length = 0;
+    EXERCISE_RITUALS.push(...mapped);
+  } catch (err) {
+    console.error('[rituals] Failed to load from Sanity, using fallback/cached data:', err);
+  }
+}

@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+import { TRAITS, TRAIT_COLORS } from '../traitsData';
 
 type Trait = 'Confident' | 'Calm' | 'Clear' | 'Warm' | 'Engaging';
 
@@ -12,13 +13,13 @@ type TraitAlignmentGlowProps = {
   emojiCounterScale?: number;
 };
 
-const TRAIT_CONFIG: Record<Trait, { emoji: string; glowColor: string; glowBg: string; border: string }> = {
-  Confident: { emoji: '💪', glowColor: '#f59e0b', glowBg: 'rgba(245,158,11,0.22)', border: 'rgba(245,158,11,0.6)' },
-  Calm: { emoji: '🧘', glowColor: '#818cf8', glowBg: 'rgba(129,140,248,0.22)', border: 'rgba(129,140,248,0.6)' },
-  Clear: { emoji: '🎯', glowColor: '#21e8ff', glowBg: 'rgba(33,232,255,0.22)', border: 'rgba(33,232,255,0.6)' },
-  Warm: { emoji: '☀️', glowColor: '#f97316', glowBg: 'rgba(249,115,22,0.22)', border: 'rgba(249,115,22,0.6)' },
-  Engaging: { emoji: '⚡', glowColor: '#10b981', glowBg: 'rgba(16,185,129,0.22)', border: 'rgba(16,185,129,0.6)' },
-};
+// Reads from the shared, Sanity-backed trait data (../traitsData.ts) rather than keeping its own
+// copy of colors/emoji — this used to duplicate ScreenVoiceTraits.tsx's TRAIT_COLORS exactly.
+function getTraitConfig(trait: Trait) {
+  const color = TRAIT_COLORS[trait];
+  const emoji = TRAITS.find(t => t.label === trait)?.emoji ?? '';
+  return { emoji, glowColor: color.primary, glowBg: color.glow, border: color.border };
+}
 
 // Deliberately wide spread across tiers (radius, opacity, saturation) so a low week and a high
 // week read as visibly different states at a glance, not a subtle gradient. Emoji size stays
@@ -39,7 +40,7 @@ export function getGlowTier(score: number): GlowTier {
 }
 
 export function getTraitGlowColor(trait: Trait): string {
-  return TRAIT_CONFIG[trait].glowColor;
+  return getTraitConfig(trait).glowColor;
 }
 
 // {{...}} marks the strongest-emphasis segment, **...** the secondary one — same markup
@@ -55,7 +56,7 @@ export function computeTraitScore(q1: number, q2: number): number {
 }
 
 export default function TraitAlignmentGlow({ trait, score, emojiCounterScale = 1 }: TraitAlignmentGlowProps) {
-  const config = TRAIT_CONFIG[trait];
+  const config = getTraitConfig(trait);
   const { radius, opacity, pulseDuration, saturate, brightness } = getGlowTier(score);
   const diameter = radius * 2;
 

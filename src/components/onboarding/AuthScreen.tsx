@@ -126,7 +126,7 @@ export default function AuthScreen({ onSignUp, onBypass }: Props) {
           </div>
 
           <div className="my-auto max-w-[340px] w-full mx-auto">
-            <h2 className="text-2xl font-bold font-display tracking-tight text-white mb-1">
+            <h2 className="text-2xl font-light font-display tracking-tight text-white mb-1">
               {isSignUp ? 'Create your account' : 'Sign into your account'}
             </h2>
             <p className="text-xs text-zinc-500 leading-normal mb-8 font-normal">

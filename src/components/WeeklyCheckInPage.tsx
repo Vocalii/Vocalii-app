@@ -3,8 +3,8 @@ import { ChevronLeft } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Goal } from '../types/onboarding';
 import { GOALS } from './onboarding/ScreenGoals';
-import { TRAITS, TRAIT_COLORS } from './onboarding/ScreenVoiceTraits';
-import { GOAL_QUESTIONS, TRAIT_QUESTIONS, UNIVERSAL_QUESTIONS, REFLECTION_MAX_LENGTH } from '../lib/weeklyCheckin';
+import { TRAITS, TRAIT_COLORS, TRAIT_QUESTIONS } from '../traitsData';
+import { GOAL_QUESTIONS, UNIVERSAL_QUESTIONS, REFLECTION_MAX_LENGTH } from '../lib/weeklyCheckin';
 
 interface Props {
   onBack: () => void;

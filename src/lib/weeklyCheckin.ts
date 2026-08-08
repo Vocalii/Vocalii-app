@@ -43,29 +43,7 @@ export const GOAL_QUESTIONS: Record<Goal, [string, string]> = {
 // this flag exists so scoring logic knows to invert it.
 export const REVERSE_SCORED_GOALS: Goal[] = ['reduce_strain', 'build_endurance', 'improve_clarity'];
 
-// Two questions per trait, keyed by the exact labels in ScreenVoiceTraits.tsx's TRAITS array.
-export const TRAIT_QUESTIONS: Record<string, [string, string]> = {
-  Confident: [
-    'How confident and powerful did your voice feel when you needed to make an impact this week?',
-    'How often did your voice feel like it supported your authority in conversations or presentations?',
-  ],
-  Calm: [
-    'How grounded and relaxed did your voice feel during stressful or high-pressure moments this week?',
-    'How often were you able to speak with ease rather than tension or urgency?',
-  ],
-  Clear: [
-    'How clear and professional did your voice sound in your most important communication this week?',
-    'How often did your voice feel precise and easy to follow when you were speaking?',
-  ],
-  Warm: [
-    'How warm and approachable did your voice feel in conversations this week?',
-    'How often did your voice feel genuinely like you — natural and unforced?',
-  ],
-  Engaging: [
-    'How energetic and dynamic did your voice feel during conversations or presentations this week?',
-    'How well did your voice hold attention and keep people engaged this week?',
-  ],
-};
+// Trait questions (TRAIT_QUESTIONS) now live in ../traitsData.ts, sourced from Sanity.
 
 // Universal questions asked regardless of goal or trait.
 export const UNIVERSAL_QUESTIONS = {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pencil, X, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HabitPair } from '../types/onboarding';
-import { DAILY_HABITS, VOCAL_HABITS } from './onboarding/ScreenHabits';
+import { DAILY_HABITS, VOCAL_HABITS } from '../habitsData';
 import HabitPairPicker from './HabitPairPicker';
 
 const DEFAULT_HABITS = [

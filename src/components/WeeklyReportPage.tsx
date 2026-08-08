@@ -1,8 +1,8 @@
 import { useEffect, useState, Fragment } from 'react';
 import { ArrowLeft, ChevronLeft, Download, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { TRAITS } from './onboarding/ScreenVoiceTraits';
-import { DAILY_HABITS, VOCAL_HABITS } from './onboarding/ScreenHabits';
+import { TRAITS } from '../traitsData';
+import { DAILY_HABITS, VOCAL_HABITS } from '../habitsData';
 import { Goal, HabitPair } from '../types/onboarding';
 import { supabase } from '../lib/supabase';
 import GoalProgressCard from './GoalProgressCard';

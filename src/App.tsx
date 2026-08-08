@@ -1050,7 +1050,7 @@ export default function App() {
                   onNavigateRituals={() => { setAutoStartRituals(true); setCurrentView('rituals'); }}
                 />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <WeatherWidget destination={activeDestination} confidence={todayVocalConfidence} baselineConfidence={baselineConfidenceAvg} />
+                  <WeatherWidget destination={activeDestination} confidence={todayVocalConfidence} baselineConfidence={baselineConfidenceAvg} vocalEffort={todayVocalEffort} />
                   <GoalProgressCard
                     userId={userId}
                     goal={goals[0] ?? null}

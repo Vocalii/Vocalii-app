@@ -33,7 +33,7 @@ import {
 import { EXERCISE_RITUALS } from '../ritualsData';
 import { Ritual } from '../types';
 import { HabitPair } from '../types/onboarding';
-import { VOCAL_HABITS } from './onboarding/ScreenHabits';
+import { VOCAL_HABITS } from '../habitsData';
 
 const DEFAULT_HABIT_PAIRS: HabitPair[] = [
   { daily: 'morning_shower', vocal: 'drink_water' },
@@ -1304,9 +1304,27 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                 <div className="relative flex flex-col border-b border-white/[0.05] lg:border-b-0 lg:border-r">
                   <div className="absolute -bottom-24 -right-12 w-56 h-56 bg-[#17A9C9]/5 rounded-full blur-[70px] pointer-events-none" />
 
-                  {/* Animation canvas */}
-                  <div className={`flex-1 relative ${ritualCompleted ? 'min-h-[280px]' : 'min-h-[380px]'}`}>
-                    {activityVisual}
+                  {/* Animation canvas — uploaded player media wins over the procedural visual when present */}
+                  <div className={`flex-1 relative overflow-hidden ${ritualCompleted ? 'min-h-[280px]' : 'min-h-[380px]'}`}>
+                    {selectedRitual.playerMedia ? (
+                      selectedRitual.playerMedia.type === 'video' ? (
+                        <video
+                          key={selectedRitual.playerMedia.url}
+                          src={selectedRitual.playerMedia.url}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                        />
+                      ) : (
+                        <img
+                          src={selectedRitual.playerMedia.url}
+                          alt={selectedRitual.name}
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
+                      )
+                    ) : activityVisual}
                   </div>
 
                   {/* Start / Mark Complete button */}
@@ -1668,7 +1686,7 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                           (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(255,255,255,0.06)';
                         }}
                       >
-                        <span className="text-[11px] font-mono uppercase tracking-[0.15em] text-zinc-400 group-hover/why:text-white transition-colors duration-200 whitespace-nowrap">
+                        <span className="text-[11px] font-light uppercase tracking-[0.15em] text-zinc-400 group-hover/why:text-white transition-colors duration-200 whitespace-nowrap">
                           Why it works
                         </span>
                         <span className="text-[9.5px] font-mono text-[#21e8ff]/50 bg-[#17A9C9]/10 border border-[#17A9C9]/20 px-1.5 py-0.5 rounded-full tabular-nums">
@@ -1715,28 +1733,50 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                     className={`relative h-[22rem] flex items-center justify-center overflow-hidden ${heroTheme.bg}`}
                     data-slot="ritual-media"
                   >
-                    {/* Animated breathing glow */}
-                    <motion.div
-                      className={`absolute inset-0 ${heroTheme.glow} pointer-events-none`}
-                      animate={{ opacity: [0.55, 1, 0.55] }}
-                      transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
-                    />
-                    {/* Secondary radial pulse */}
-                    <motion.div
-                      className="absolute inset-0 pointer-events-none"
-                      animate={{ scale: [1, 1.08, 1], opacity: [0.3, 0.6, 0.3] }}
-                      transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-                      style={{ background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.04) 0%, transparent 60%)' }}
-                    />
+                    {selectedRitual.overviewMedia ? (
+                      selectedRitual.overviewMedia.type === 'video' ? (
+                        <video
+                          key={selectedRitual.overviewMedia.url}
+                          src={selectedRitual.overviewMedia.url}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                        />
+                      ) : (
+                        <img
+                          src={selectedRitual.overviewMedia.url}
+                          alt={selectedRitual.name}
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
+                      )
+                    ) : (
+                      <>
+                        {/* Animated breathing glow */}
+                        <motion.div
+                          className={`absolute inset-0 ${heroTheme.glow} pointer-events-none`}
+                          animate={{ opacity: [0.55, 1, 0.55] }}
+                          transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
+                        />
+                        {/* Secondary radial pulse */}
+                        <motion.div
+                          className="absolute inset-0 pointer-events-none"
+                          animate={{ scale: [1, 1.08, 1], opacity: [0.3, 0.6, 0.3] }}
+                          transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+                          style={{ background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.04) 0%, transparent 60%)' }}
+                        />
 
-                    {/* Floating icon */}
-                    <motion.div
-                      animate={{ y: [0, -10, 0] }}
-                      transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
-                      className="relative z-10"
-                    >
-                      <HeroIcon className={`w-40 h-40 ${heroTheme.iconColor} opacity-[0.12]`} />
-                    </motion.div>
+                        {/* Floating icon */}
+                        <motion.div
+                          animate={{ y: [0, -10, 0] }}
+                          transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
+                          className="relative z-10"
+                        >
+                          <HeroIcon className={`w-40 h-40 ${heroTheme.iconColor} opacity-[0.12]`} />
+                        </motion.div>
+                      </>
+                    )}
 
                     {/* Badges */}
                     <div className="absolute top-4 left-4 z-20">
@@ -1797,10 +1837,10 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                       <div className="flex items-center justify-between p-6 pb-4 relative z-10">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(23,169,201,0.15)', border: '1px solid rgba(23,169,201,0.3)' }}>
-                            <Sparkles className="w-3.5 h-3.5 text-[#21e8ff]" />
+                            <span className="text-[#21e8ff]">?</span>
                           </div>
                           <div>
-                            <h3 className="text-sm font-semibold text-white leading-none">Why it works</h3>
+                            <h3 className="text-sm font-light text-white leading-none">Why it works</h3>
                             <p className="text-[10px] text-zinc-500 font-mono mt-0.5">{selectedRitual.benefits.length} clinical benefits</p>
                           </div>
                         </div>

@@ -62,6 +62,11 @@ export interface TodoItem {
   completed: boolean;
 }
 
+export interface RitualMedia {
+  type: 'image' | 'video';
+  url: string;
+}
+
 export interface Ritual {
   id: string;
   name: string;
@@ -72,5 +77,10 @@ export interface Ritual {
   instructionSteps: string[];
   primaryFocus: string;
   benefits: string[];
+  // Optional — edited in Sanity. Shown in the ritual overview hero (browsing the library) and in
+  // the active-practice player, respectively. Undefined/null for rituals with no media uploaded,
+  // which keep the existing procedural animation/icon visuals as-is.
+  overviewMedia?: RitualMedia | null;
+  playerMedia?: RitualMedia | null;
 }
 

@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import OnboardingLogo from './OnboardingLogo';
 import OnboardingStepProgress from './OnboardingStepProgress';
+import { TRAITS, TRAIT_COLORS, TRAIT_QUOTES } from '../../traitsData';
 
 interface Props {
   desiredTraits: string[];
@@ -17,41 +18,15 @@ interface Props {
 
 export const VOICE_STATEMENT_MAX_LENGTH = 50;
 
-// single color per trait for distinct selected states
-export const TRAIT_COLORS: Record<string, { primary: string; glow: string; border: string }> = {
-  Confident: { primary: '#f59e0b', glow: 'rgba(245,158,11,0.22)', border: 'rgba(245,158,11,0.6)' },
-  Calm: { primary: '#818cf8', glow: 'rgba(129,140,248,0.22)', border: 'rgba(129,140,248,0.6)' },
-  Clear: { primary: '#21e8ff', glow: 'rgba(33,232,255,0.22)', border: 'rgba(33,232,255,0.6)' },
-  Warm: { primary: '#f97316', glow: 'rgba(249,115,22,0.22)', border: 'rgba(249,115,22,0.6)' },
-  Engaging: { primary: '#10b981', glow: 'rgba(16,185,129,0.22)', border: 'rgba(16,185,129,0.6)' },
+// Purely layout — where each trait's reactive background glow blob sits on this screen. Not
+// editable content, so it stays local rather than moving into traitsData.ts/Sanity.
+const TRAIT_GLOW_POS: Record<string, React.CSSProperties> = {
+  Confident: { top: '5%', left: '5%' },
+  Calm: { top: '5%', right: '5%' },
+  Clear: { top: '50%', left: '0%' },
+  Warm: { top: '50%', right: '0%' },
+  Engaging: { bottom: '5%', left: '35%' },
 };
-
-// {{word}} marks the main trait word (full color + strongest glow in HeroSection);
-// **word** marks secondary words (same color, dialed down, less glow)
-export const TRAIT_DESCRIPTIONS: Record<string, string> = {
-  Confident: 'You want a {{Confident}} voice that focuses on sounding **impactful**, **powerful**, and **authoritative**.',
-  Calm: 'You want a {{Calm}} voice that focuses on feeling **grounded** and **relaxed**.',
-  Clear: 'You want a {{Clear}} voice that focuses on sounding **professional** and **easy to follow**.',
-  Warm: 'You want a {{Warm}} voice that focuses on feeling **approachable** and **authentic**.',
-  Engaging: 'You want an {{Engaging}} voice that focuses on being **energetic** and **dynamic** when you speak.',
-};
-
-// Short mantra shown under the trait description on the dashboard
-export const TRAIT_QUOTES: Record<string, string> = {
-  Confident: 'I want to trust my voice.',
-  Calm: 'I want to stay grounded while I speak.',
-  Clear: 'I want my message to come through effortlessly.',
-  Warm: 'I want people to feel welcomed by my tone.',
-  Engaging: 'I want my energy to be contagious.',
-};
-
-export const TRAITS: { label: string; subtitle: string; emoji: string; glowPos: React.CSSProperties }[] = [
-  { label: 'Confident', subtitle: 'Impactful, powerful, authoritative', emoji: '💪', glowPos: { top: '5%', left: '5%' } },
-  { label: 'Calm', subtitle: 'Calm, grounded, relaxed', emoji: '🧘', glowPos: { top: '5%', right: '5%' } },
-  { label: 'Clear', subtitle: 'Clear, professional', emoji: '🎯', glowPos: { top: '50%', left: '0%' } },
-  { label: 'Warm', subtitle: 'Warm, approachable, authentic', emoji: '☀️', glowPos: { top: '50%', right: '0%' } },
-  { label: 'Engaging', subtitle: 'Energetic, dynamic', emoji: '⚡', glowPos: { bottom: '5%', left: '35%' } },
-];
 
 export default function ScreenVoiceTraits({ desiredTraits, onChangeDesiredTraits, voiceStatement, onChangeVoiceStatement, onNext, onBack, step, totalSteps }: Props) {
   const selectedTrait = desiredTraits[0];
@@ -84,7 +59,7 @@ export default function ScreenVoiceTraits({ desiredTraits, onChangeDesiredTraits
               exit={{ opacity: 0, scale: 0.6 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
               className="absolute w-[500px] h-[500px] rounded-full blur-[130px]"
-              style={{ ...trait.glowPos, background: `radial-gradient(circle, ${TRAIT_COLORS[trait.label].glow} 0%, transparent 70%)` }}
+              style={{ ...TRAIT_GLOW_POS[trait.label], background: `radial-gradient(circle, ${TRAIT_COLORS[trait.label].glow} 0%, transparent 70%)` }}
             />
           ))}
         </AnimatePresence>

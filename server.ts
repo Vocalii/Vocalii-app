@@ -1,31 +1,42 @@
 import express from 'express';
 import path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
-import { EXERCISE_RITUALS } from './src/ritualsData.js';
+import { EXERCISE_RITUALS, loadRitualsFromSanity } from './src/ritualsData.js';
 
 const PORT = 3000;
 
-const RITUAL_ID_LIST = EXERCISE_RITUALS.map(r => r.id);
+// Fire-and-forget rather than a top-level await: esbuild's CJS output (the self-host bundle
+// target) doesn't support top-level await syntax at all. Everything below that depends on ritual
+// data is computed fresh per-request (never snapshotted into a module-level const) instead, so it
+// self-corrects the moment this resolves, regardless of whether that's before or after the first
+// request — falls back to (and never clears) the static FALLBACK_RITUALS seed on any failure.
+void loadRitualsFromSanity();
 
-const COMMIT_PLAN_TOOL: Anthropic.Tool = {
-  name: 'commit_ritual_plan',
-  description: 'Finalize the tailored ritual plan. Call this ONLY after you have summarized your understanding of the event back to the user and the user has explicitly confirmed (e.g. said "yes" or "confirm") that you should generate the plan. Never call this on the same turn as the summary.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      ritualIds: {
-        type: 'array',
-        items: { type: 'string', enum: RITUAL_ID_LIST },
-        description: 'Ordered list of ritual ids to feature during the prep window, most important first.',
+function getRitualIdList(): string[] {
+  return EXERCISE_RITUALS.map(r => r.id);
+}
+
+function buildCommitPlanTool(): Anthropic.Tool {
+  return {
+    name: 'commit_ritual_plan',
+    description: 'Finalize the tailored ritual plan. Call this ONLY after you have summarized your understanding of the event back to the user and the user has explicitly confirmed (e.g. said "yes" or "confirm") that you should generate the plan. Never call this on the same turn as the summary.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        ritualIds: {
+          type: 'array',
+          items: { type: 'string', enum: getRitualIdList() },
+          description: 'Ordered list of ritual ids to feature during the prep window, most important first.',
+        },
+        insight: {
+          type: 'string',
+          description: 'A short (2-3 sentence) human-readable explanation of why this plan fits the event.',
+        },
       },
-      insight: {
-        type: 'string',
-        description: 'A short (2-3 sentence) human-readable explanation of why this plan fits the event.',
-      },
+      required: ['ritualIds', 'insight'],
     },
-    required: ['ritualIds', 'insight'],
-  },
-};
+  };
+}
 
 const MOCK_QUESTIONS = [
   'How vocally demanding is this event — are you speaking the whole time, or more back-and-forth conversation?',
@@ -56,7 +67,8 @@ function getMockResponse(history: { role: 'user' | 'assistant'; content: string 
     };
   }
 
-  const ritualIds = RITUAL_ID_LIST.slice(0, Math.min(3, RITUAL_ID_LIST.length));
+  const ritualIdList = getRitualIdList();
+  const ritualIds = ritualIdList.slice(0, Math.min(3, ritualIdList.length));
   return {
     type: 'plan' as const,
     ritualIds,
@@ -64,31 +76,33 @@ function getMockResponse(history: { role: 'user' | 'assistant'; content: string 
   };
 }
 
-const SELECT_RITUALS_TOOL: Anthropic.Tool = {
-  name: 'select_rituals',
-  description: 'Return the selected rituals for today, one per category slot, in order.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      selections: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            ritual_id: { type: 'string', enum: RITUAL_ID_LIST },
-            reason: { type: 'string' },
+function buildSelectRitualsTool(): Anthropic.Tool {
+  return {
+    name: 'select_rituals',
+    description: 'Return the selected rituals for today, one per category slot, in order.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        selections: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              ritual_id: { type: 'string', enum: getRitualIdList() },
+              reason: { type: 'string' },
+            },
+            required: ['ritual_id', 'reason'],
           },
-          required: ['ritual_id', 'reason'],
+        },
+        insight: {
+          type: 'string',
+          description: "A short (1 sentence), warm, human-readable explanation of why today's routine was chosen, written directly to the user (\"you\"/\"your\") — referencing their check-in (voice status, body scan area, effort/demand) and how the chosen rituals address it. No mention of categories, ids, or internal rules.",
         },
       },
-      insight: {
-        type: 'string',
-        description: "A short (1 sentence), warm, human-readable explanation of why today's routine was chosen, written directly to the user (\"you\"/\"your\") — referencing their check-in (voice status, body scan area, effort/demand) and how the chosen rituals address it. No mention of categories, ids, or internal rules.",
-      },
+      required: ['selections', 'insight'],
     },
-    required: ['selections', 'insight'],
-  },
-};
+  };
+}
 
 interface SelectRitualsRequestBody {
   profile: { role: string | null; experienceLevel: string | null; primaryGoal: string | null; voiceBarrier: string | null };
@@ -394,7 +408,7 @@ app.post('/api/event-chat', async (req, res) => {
       model: 'claude-sonnet-5',
       max_tokens: 1024,
       system: buildSystemPrompt(event),
-      tools: [COMMIT_PLAN_TOOL],
+      tools: [buildCommitPlanTool()],
       messages: history.map(m => ({ role: m.role, content: m.content })),
     });
 
@@ -404,7 +418,8 @@ app.post('/api/event-chat', async (req, res) => {
 
     if (toolUse) {
       const input = toolUse.input as { ritualIds: string[]; insight: string };
-      const validIds = input.ritualIds.filter(id => RITUAL_ID_LIST.includes(id));
+      const ritualIdList = getRitualIdList();
+      const validIds = input.ritualIds.filter(id => ritualIdList.includes(id));
       res.json({ type: 'plan', ritualIds: validIds, insight: input.insight });
       return;
     }
@@ -436,7 +451,7 @@ app.post('/api/select-rituals', async (req, res) => {
       model: 'claude-sonnet-5',
       max_tokens: 1024,
       system: buildRitualSelectionPrompt(body),
-      tools: [SELECT_RITUALS_TOOL],
+      tools: [buildSelectRitualsTool()],
       tool_choice: { type: 'tool', name: 'select_rituals' },
       messages: [{ role: 'user', content: "Select today's rituals." }],
     });
@@ -475,9 +490,10 @@ app.post('/api/select-rituals', async (req, res) => {
     }
 
     console.log('[select-rituals] Claude selections:', JSON.stringify(selections));
+    const ritualIdList = getRitualIdList();
     const validIds = selections
       .map(s => (s && typeof s === 'object' ? (s as { ritual_id?: unknown }).ritual_id : null))
-      .filter((id): id is string => typeof id === 'string' && RITUAL_ID_LIST.includes(id));
+      .filter((id): id is string => typeof id === 'string' && ritualIdList.includes(id));
     res.json({ ritualIds: validIds.length > 0 ? validIds : fallbackRitualSelection(body), insight });
   } catch (err) {
     console.error('select-rituals error:', err);
