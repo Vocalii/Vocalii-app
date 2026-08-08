@@ -12,14 +12,17 @@ interface WeatherWidgetProps {
   confidence?: number | null;
   baselineConfidence?: number | null;
   vocalEffort?: number | null;
+  baselineEffort?: number | null;
 }
 
 type Face = 'confidence' | 'effort';
 
-// Same arc-gauge chrome for both faces — only the metric, scale, and target differ. Effort has no
-// baseline to trend against yet, so its trend row simply doesn't render (same as confidence would
-// with no baseline), rather than inventing tracking that doesn't exist elsewhere in the app.
-export default function WeatherWidget({ destination: _destination, confidence, baselineConfidence, vocalEffort }: WeatherWidgetProps) {
+// Same arc-gauge chrome for both faces — only the metric, scale, and target differ. Both faces
+// trend against a running baseline average (all past days, today excluded — see App.tsx's
+// baselineConfidenceAvg/baselineEffortAvg). Confidence: higher is better, so an increase is green.
+// Effort: lower is better, so a *decrease* is green — the trend arrow still points the literal
+// direction the number moved, only the color's "good/bad" meaning flips between the two faces.
+export default function WeatherWidget({ destination: _destination, confidence, baselineConfidence, vocalEffort, baselineEffort }: WeatherWidgetProps) {
   const [face, setFace] = useState<Face>('confidence');
 
   useEffect(() => {
@@ -39,11 +42,13 @@ export default function WeatherWidget({ destination: _destination, confidence, b
   const strokeLength = Math.PI * radius;
   const strokeDashoffset = value != null ? strokeLength * (1 - value / scaleMax) : strokeLength;
 
-  const diff = face === 'confidence' && confidence != null && baselineConfidence != null
-    ? confidence - baselineConfidence
-    : null;
+  const diff = face === 'confidence'
+    ? (confidence != null && baselineConfidence != null ? confidence - baselineConfidence : null)
+    : (vocalEffort != null && baselineEffort != null ? vocalEffort - baselineEffort : null);
   const TrendIcon = diff == null || Math.abs(diff) < 0.05 ? Minus : diff > 0 ? ArrowUp : ArrowDown;
-  const trendColor = diff == null || Math.abs(diff) < 0.05 ? '#71717a' : diff > 0 ? '#34d399' : '#f87171';
+  // Confidence: diff > 0 (above baseline) is good. Effort: diff < 0 (below baseline) is good.
+  const improved = diff != null && (face === 'confidence' ? diff > 0 : diff < 0);
+  const trendColor = diff == null || Math.abs(diff) < 0.05 ? '#71717a' : improved ? '#34d399' : '#f87171';
 
   const gradientId = face === 'effort' ? 'orangeGlowGrad' : 'purpleGlowGrad';
   const ambientColor = face === 'effort' ? '#f59e0b' : '#554bf5';

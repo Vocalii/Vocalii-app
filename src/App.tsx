@@ -168,6 +168,7 @@ export default function App() {
   const [todayVocalConfidence, setTodayVocalConfidence] = useState<number | null>(null);
   const [todayVoiceDemandLevel, setTodayVoiceDemandLevel] = useState<number | null>(null);
   const [baselineConfidenceAvg, setBaselineConfidenceAvg] = useState<number | null>(null);
+  const [baselineEffortAvg, setBaselineEffortAvg] = useState<number | null>(null);
   const [todaySymptoms, setTodaySymptoms] = useState<string[]>([]);
   const [selectedRitualIds, setSelectedRitualIds] = useState<string[] | null>(null);
   const [ritualInsight, setRitualInsight] = useState<string | null>(null);
@@ -226,6 +227,7 @@ export default function App() {
       { data: eventsData },
       { data: habitCompletionsData },
       { data: confidenceHistory },
+      { data: effortHistory },
       { data: weeklyCheckinRow },
     ] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
@@ -236,6 +238,7 @@ export default function App() {
       supabase.from('events').select('*').eq('user_id', uid).order('date'),
       supabase.from('habit_completions').select('*').eq('user_id', uid).gte('date', sevenDaysAgoStr),
       supabase.from('daily_checkins').select('voice_confidence').eq('user_id', uid).not('voice_confidence', 'is', null).neq('date', today),
+      supabase.from('daily_checkins').select('vocal_effort').eq('user_id', uid).not('vocal_effort', 'is', null).neq('date', today),
       supabase.from('weekly_checkins').select('id').eq('user_id', uid).eq('week_start', getReflectionWeekStart()).maybeSingle(),
     ]);
 
@@ -277,6 +280,10 @@ export default function App() {
       if (confidenceHistory && confidenceHistory.length > 0) {
         const sum = confidenceHistory.reduce((acc, c) => acc + (c.voice_confidence ?? 0), 0);
         setBaselineConfidenceAvg(sum / confidenceHistory.length);
+      }
+      if (effortHistory && effortHistory.length > 0) {
+        const sum = effortHistory.reduce((acc, c) => acc + (c.vocal_effort ?? 0), 0);
+        setBaselineEffortAvg(sum / effortHistory.length);
       }
       setOnboardingDone(true);
     } else if (profile) {
@@ -1084,7 +1091,7 @@ export default function App() {
                   onNavigateRituals={() => { setAutoStartRituals(true); setCurrentView('rituals'); }}
                 />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <WeatherWidget destination={activeDestination} confidence={todayVocalConfidence} baselineConfidence={baselineConfidenceAvg} vocalEffort={todayVocalEffort} />
+                  <WeatherWidget destination={activeDestination} confidence={todayVocalConfidence} baselineConfidence={baselineConfidenceAvg} vocalEffort={todayVocalEffort} baselineEffort={baselineEffortAvg} />
                   <GoalProgressCard
                     userId={userId}
                     goal={goals[0] ?? null}
