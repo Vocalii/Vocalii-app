@@ -768,13 +768,20 @@ export default function App() {
     .filter((e): e is VocalEvent & { prepDaysBefore: number; tailoredRitualIds: string[] } =>
       !!e.prepDaysBefore && !!e.tailoredRitualIds?.length)
     .filter(e => {
-      const eventDate = new Date(e.date);
-      const prepStart = new Date(e.date);
+      // e.date is a plain YYYY-MM-DD string — parsing it bare (`new Date(e.date)`) reads it as
+      // UTC midnight, which sits hours *before* local midnight in any negative-UTC-offset
+      // timezone (e.g. all of the US). Compared against `new Date()` (local "now"), that silently
+      // cut prep mode off on the evening before the event instead of running through it.
+      // Appending 'T00:00:00' parses at local midnight instead, matching this app's convention
+      // elsewhere (see weeklyCheckin.ts, ritualSelection.ts's checkPersistentPain).
+      const eventDate = new Date(e.date + 'T00:00:00');
+      const prepStart = new Date(e.date + 'T00:00:00');
       prepStart.setDate(prepStart.getDate() - e.prepDaysBefore);
-      const today = new Date();
-      return today >= prepStart && today <= eventDate;
+      const todayMidnight = new Date();
+      todayMidnight.setHours(0, 0, 0, 0);
+      return todayMidnight >= prepStart && todayMidnight <= eventDate;
     })
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0] ?? null;
+    .sort((a, b) => new Date(a.date + 'T00:00:00').getTime() - new Date(b.date + 'T00:00:00').getTime())[0] ?? null;
 
   // No default ritual list anymore — rituals are only assigned once selectRituals runs, right
   // after today's check-in (or from an active prep event's tailored plan, which always wins).
@@ -787,10 +794,15 @@ export default function App() {
   const weeklyNeedsMoreData = weeklyDaysRemaining > 0;
 
   const activePrepEventSummary = activePrepEvent
-    ? {
-        title: activePrepEvent.title,
-        daysLeft: Math.max(0, Math.ceil((new Date(activePrepEvent.date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))),
-      }
+    ? (() => {
+        const todayMidnight = new Date();
+        todayMidnight.setHours(0, 0, 0, 0);
+        const eventMidnight = new Date(activePrepEvent.date + 'T00:00:00');
+        return {
+          title: activePrepEvent.title,
+          daysLeft: Math.max(0, Math.round((eventMidnight.getTime() - todayMidnight.getTime()) / (1000 * 60 * 60 * 24))),
+        };
+      })()
     : null;
 
   useEffect(() => {
