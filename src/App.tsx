@@ -362,6 +362,27 @@ export default function App() {
     await supabase.auth.signOut();
   };
 
+  // ─── Account deletion ───────────────────────────────────────────────────────
+  // Returns an error message on failure, or null on success. The server verifies the access
+  // token belongs to the account being deleted — see server.ts's /api/delete-account.
+  const handleDeleteAccount = async (): Promise<string | null> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return 'You must be signed in to delete your account.';
+
+    try {
+      const res = await fetch('/api/delete-account', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return data.error ?? 'Failed to delete account.';
+      await supabase.auth.signOut();
+      return null;
+    } catch {
+      return 'Failed to reach the server. Please try again.';
+    }
+  };
+
   // ─── Quick preview bypass (no account required) ─────────────────────────────
   const handleBypass = () => {
     setOnboardingDone(true);
@@ -974,6 +995,7 @@ export default function App() {
           habitPairs={userHabits}
           onSave={handleUpdateProfile}
           onChangePassword={handleChangePassword}
+          onDeleteAccount={handleDeleteAccount}
         />
       )}
 

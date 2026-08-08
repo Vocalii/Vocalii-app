@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronLeft, Mic, Square, Check, Activity } from 'lucide-react';
+import { ChevronLeft, Mic, Square, Check, Activity, Shuffle } from 'lucide-react';
 import { VocalReport } from '../types/onboarding';
+import { READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS, pickRandomPhrase } from '../lib/recordingPrompts';
 
 interface VoiceAnalyzerPageProps {
   onBack: () => void;
@@ -48,6 +49,98 @@ function stddev(arr: number[]): number {
   return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / arr.length);
 }
 
+// Same 3 steps, in the same order, as the onboarding baseline recorder (BaselineFlow.tsx). Read
+// Aloud / Free Speech get a random phrase each time (see recordingPrompts.ts) — picked once per
+// attempt via buildSteps(), not on every render.
+function buildSteps() {
+  return [
+    {
+      label: 'Sustained Vowel',
+      instruction: 'Say /ah/ and hold it steadily',
+      hint: '~5 seconds',
+    },
+    {
+      label: 'Read Aloud',
+      instruction: pickRandomPhrase(READ_ALOUD_PHRASES),
+      hint: '~20–30 seconds',
+    },
+    {
+      label: 'Free Speech',
+      instruction: pickRandomPhrase(FREE_SPEECH_PROMPTS),
+      hint: '~20–30 seconds',
+    },
+  ];
+}
+
+// Which phrase pool (if any) backs each step's instruction — null for Sustained Vowel, which has
+// no variety to swap between.
+const PHRASE_LISTS_BY_STEP: (string[] | null)[] = [null, READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS];
+
+interface SegmentMetrics {
+  pitchHz: number;
+  pitchRangeHz: number;
+  resonanceScore: number;
+  clarityPct: number;
+  loudnessDb: number;
+  stabilityPct: number;
+}
+
+// Identical to BaselineFlow.tsx's computeSegmentMetrics — same 3-step recording, same per-segment
+// math, same combine weights below, so a voice-analyzer report and the onboarding baseline score
+// an equivalent recording the same way.
+function computeSegmentMetrics(
+  pitchReadings: number[],
+  fftSnapshot: Float32Array | null,
+  timeDomainSnapshot: Float32Array | null,
+  sampleRate: number,
+): SegmentMetrics {
+  const pitchHz = pitchReadings.length > 0 ? Math.round(median(pitchReadings)) : 180;
+  const pitchRangeHz = pitchReadings.length > 1
+    ? Math.round(Math.max(...pitchReadings) - Math.min(...pitchReadings))
+    : 20;
+
+  let resonanceScore = 55;
+  if (fftSnapshot) {
+    const bins = fftSnapshot.length;
+    const hzPerBin = (sampleRate / 2) / bins;
+    let midEnergy = 0, totalEnergy = 0;
+    for (let i = 0; i < bins; i++) {
+      const linear = Math.pow(10, fftSnapshot[i] / 20);
+      const hz = i * hzPerBin;
+      totalEnergy += linear;
+      if (hz >= 1000 && hz <= 4000) midEnergy += linear;
+    }
+    if (totalEnergy > 0) resonanceScore = Math.round(Math.min(100, (midEnergy / totalEnergy) * 500));
+  }
+
+  let clarityPct = 60;
+  if (fftSnapshot) {
+    const bins = fftSnapshot.length;
+    let maxLinear = 0, totalLinear = 0;
+    for (let i = 0; i < bins; i++) {
+      const l = Math.pow(10, fftSnapshot[i] / 20);
+      totalLinear += l;
+      if (l > maxLinear) maxLinear = l;
+    }
+    if (totalLinear > 0) clarityPct = Math.round(Math.min(100, (maxLinear / totalLinear) * 1000));
+  }
+
+  let loudnessDb = -60;
+  if (timeDomainSnapshot) {
+    let rmsSum = 0;
+    for (let i = 0; i < timeDomainSnapshot.length; i++) {
+      rmsSum += timeDomainSnapshot[i] ** 2;
+    }
+    const rms = Math.sqrt(rmsSum / timeDomainSnapshot.length);
+    loudnessDb = rms > 0.0001 ? Math.max(-60, Math.round(20 * Math.log10(rms))) : -60;
+  }
+
+  const jitter = pitchReadings.length > 2 ? stddev(pitchReadings) / (median(pitchReadings) || 1) : 0;
+  const stabilityPct = Math.round(Math.max(0, Math.min(100, (1 - jitter / 0.12) * 100)));
+
+  return { pitchHz, pitchRangeHz, resonanceScore, clarityPct, loudnessDb, stabilityPct };
+}
+
 function noteFromHz(hz: number): string {
   const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const semitones = Math.round(12 * Math.log2(hz / 440)) + 69;
@@ -92,8 +185,11 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
 
   const [phase, setPhase] = useState<AnalyzerPhase>('record');
   const [resultsStep, setResultsStep] = useState<'metrics' | 'log'>('metrics');
+  const [step, setStep] = useState(0); // which of the 3 recording steps (0-2)
+  const [steps, setSteps] = useState(buildSteps);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [seconds, setSeconds] = useState(0);
+  const [totalSeconds, setTotalSeconds] = useState(0); // summed across all 3 steps, for the saved report's duration
   const [metrics, setMetrics] = useState<VocalMetrics | null>(null);
   const [barHeights, setBarHeights] = useState<number[]>(new Array(28).fill(0.08));
 
@@ -111,8 +207,12 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pitchReadings = useRef<number[]>([]);
   const lastPitchTime = useRef<number>(0);
-  const fftSnapshotRef = useRef<Float32Array | null>(null);
-  const timeDomainSnapshotRef = useRef<Float32Array | null>(null);
+
+  // Per-step captured data — one slot per STEPS entry, combined in computeMetrics() below.
+  const allPitchReadings = useRef<number[][]>([[], [], []]);
+  const allFftSnapshots = useRef<(Float32Array | null)[]>([null, null, null]);
+  const allTimeDomainSnapshots = useRef<(Float32Array | null)[]>([null, null, null]);
+  const allSampleRates = useRef<number[]>([44100, 44100, 44100]);
 
   const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
@@ -179,16 +279,26 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     if (recordingState === 'idle') {
       startRecording();
     } else if (recordingState === 'recording') {
-      if (analyserRef.current) {
-        const freqData = new Float32Array(analyserRef.current.frequencyBinCount);
-        analyserRef.current.getFloatFrequencyData(freqData);
-        fftSnapshotRef.current = freqData;
-
-        const tdData = new Float32Array(analyserRef.current.fftSize);
-        analyserRef.current.getFloatTimeDomainData(tdData);
-        timeDomainSnapshotRef.current = tdData;
+      // Capture FFT + time-domain snapshots BEFORE closing the audio context — same order as
+      // BaselineFlow.tsx's stopRecording().
+      let fftSnapshot: Float32Array | null = null;
+      let timeDomainSnapshot: Float32Array | null = null;
+      let sampleRate = 44100;
+      if (analyserRef.current && audioContextRef.current) {
+        sampleRate = audioContextRef.current.sampleRate;
+        fftSnapshot = new Float32Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getFloatFrequencyData(fftSnapshot);
+        timeDomainSnapshot = new Float32Array(analyserRef.current.fftSize);
+        analyserRef.current.getFloatTimeDomainData(timeDomainSnapshot);
       }
       stopRecording();
+
+      allPitchReadings.current[step] = [...pitchReadings.current];
+      allFftSnapshots.current[step] = fftSnapshot;
+      allTimeDomainSnapshots.current[step] = timeDomainSnapshot;
+      allSampleRates.current[step] = sampleRate;
+      setTotalSeconds(t => t + seconds);
+
       setRecordingState('done');
       setBarHeights(new Array(28).fill(0.08));
     }
@@ -196,64 +306,50 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
 
   const handleReRecord = () => {
     stopRecording();
+    allPitchReadings.current[step] = [];
+    allFftSnapshots.current[step] = null;
+    allTimeDomainSnapshots.current[step] = null;
+    pitchReadings.current = [];
     setRecordingState('idle');
     setSeconds(0);
     setBarHeights(new Array(28).fill(0.08));
-    pitchReadings.current = [];
-    fftSnapshotRef.current = null;
-    timeDomainSnapshotRef.current = null;
   };
 
+  // Combines the 3 recorded steps into one report — identical per-segment math and combine
+  // weights as BaselineFlow.tsx's onboarding baseline, so a voice-analyzer report scores an
+  // equivalent recording the same way the baseline does.
   const computeMetrics = useCallback((): VocalMetrics => {
-    const readings = pitchReadings.current;
-    const pitchHz = readings.length > 0 ? Math.round(median(readings)) : 180;
-    const pitchRangeHz = readings.length > 1 ? Math.round(Math.max(...readings) - Math.min(...readings)) : 20;
+    const segMetrics = [0, 1, 2].map(i => computeSegmentMetrics(
+      allPitchReadings.current[i],
+      allFftSnapshots.current[i],
+      allTimeDomainSnapshots.current[i],
+      allSampleRates.current[i],
+    ));
 
-    let resonanceScore = 55;
-    if (fftSnapshotRef.current && audioContextRef.current) {
-      const sampleRate = audioContextRef.current.sampleRate;
-      const bins = fftSnapshotRef.current.length;
-      const hzPerBin = sampleRate / 2 / bins;
-      let midEnergy = 0, totalEnergy = 0;
-      for (let i = 0; i < bins; i++) {
-        const db = fftSnapshotRef.current[i];
-        const linear = Math.pow(10, db / 20);
-        const hz = i * hzPerBin;
-        totalEnergy += linear;
-        if (hz >= 1000 && hz <= 4000) midEnergy += linear;
-      }
-      if (totalEnergy > 0) resonanceScore = Math.round(Math.min(100, (midEnergy / totalEnergy) * 500));
-    }
+    const avg = (key: keyof SegmentMetrics) =>
+      Math.round((segMetrics[0][key] + segMetrics[1][key] + segMetrics[2][key]) / 3);
 
-    let clarityPct = 60;
-    if (fftSnapshotRef.current) {
-      const bins = fftSnapshotRef.current.length;
-      let maxLinear = 0, totalLinear = 0;
-      for (let i = 0; i < bins; i++) {
-        const l = Math.pow(10, fftSnapshotRef.current[i] / 20);
-        totalLinear += l;
-        if (l > maxLinear) maxLinear = l;
-      }
-      if (totalLinear > 0) clarityPct = Math.round(Math.min(100, (maxLinear / totalLinear) * 1000));
-    }
+    // Stability weighted: vowel most diagnostic (matches BaselineFlow.tsx exactly).
+    const stabilityPct = Math.round(
+      segMetrics[0].stabilityPct * 0.40 +
+      segMetrics[1].stabilityPct * 0.35 +
+      segMetrics[2].stabilityPct * 0.25,
+    );
+    const resonanceScore = avg('resonanceScore');
+    const clarityPct = avg('clarityPct');
+    const fatigueLevel = stabilityPct > 70 ? 20 : stabilityPct > 40 ? 55 : 80;
+    const fatigueEstimate: 'Low' | 'Moderate' | 'High' = stabilityPct > 70 ? 'Low' : stabilityPct > 40 ? 'Moderate' : 'High';
 
-    const jitter = readings.length > 2 ? stddev(readings) / (median(readings) || 1) : 0;
-    const fatigueEstimate: 'Low' | 'Moderate' | 'High' = jitter < 0.04 ? 'Low' : jitter < 0.10 ? 'Moderate' : 'High';
-    const fatigueLevel = fatigueEstimate === 'Low' ? 20 : fatigueEstimate === 'Moderate' ? 55 : 80;
-
-    let loudnessDb = -60;
-    if (timeDomainSnapshotRef.current) {
-      let rmsSum = 0;
-      for (let i = 0; i < timeDomainSnapshotRef.current.length; i++) {
-        rmsSum += timeDomainSnapshotRef.current[i] ** 2;
-      }
-      const rms = Math.sqrt(rmsSum / timeDomainSnapshotRef.current.length);
-      loudnessDb = rms > 0.0001 ? Math.max(-60, Math.round(20 * Math.log10(rms))) : -60;
-    }
-
-    const stabilityPct = Math.round(Math.max(0, Math.min(100, (1 - jitter / 0.12) * 100)));
-
-    return { pitchHz, pitchRangeHz, resonanceScore, clarityPct, loudnessDb, stabilityPct, fatigueEstimate, fatigueLevel };
+    return {
+      pitchHz: avg('pitchHz'),
+      pitchRangeHz: avg('pitchRangeHz'),
+      resonanceScore,
+      clarityPct,
+      loudnessDb: avg('loudnessDb'),
+      stabilityPct,
+      fatigueEstimate,
+      fatigueLevel,
+    };
   }, []);
 
   const handleAnalyze = () => {
@@ -263,6 +359,45 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
       setMetrics(m);
       setPhase('results');
     }, 2200);
+  };
+
+  // Advances to the next of the 3 recording steps, or triggers the final analysis after step 3.
+  const handleNextStep = () => {
+    if (step < 2) {
+      setStep(s => s + 1);
+      setRecordingState('idle');
+      setSeconds(0);
+    } else {
+      handleAnalyze();
+    }
+  };
+
+  // Resets all 3 recorded steps — used when restarting the whole flow from the results screen.
+  const handleStartOver = () => {
+    stopRecording();
+    setStep(0);
+    setSteps(buildSteps());
+    setRecordingState('idle');
+    setSeconds(0);
+    setTotalSeconds(0);
+    setBarHeights(new Array(28).fill(0.08));
+    pitchReadings.current = [];
+    allPitchReadings.current = [[], [], []];
+    allFftSnapshots.current = [null, null, null];
+    allTimeDomainSnapshots.current = [null, null, null];
+    allSampleRates.current = [44100, 44100, 44100];
+  };
+
+  // Swaps just the current step's phrase for a different random one from the same pool — lets
+  // someone reroll "Read Aloud"/"Free Speech" before recording without restarting the whole flow.
+  const handleSwapPhrase = () => {
+    const list = PHRASE_LISTS_BY_STEP[step];
+    if (!list) return;
+    setSteps(prev => {
+      const next = [...prev];
+      next[step] = { ...next[step], instruction: pickRandomPhrase(list, next[step].instruction) };
+      return next;
+    });
   };
 
   const handleSave = async () => {
@@ -299,7 +434,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
       ritualName: autoName,
       category: 'Calibrate',
       date: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      duration: formatTime(seconds),
+      duration: formatTime(totalSeconds),
       fatigueLevel: metrics.fatigueLevel,
       feelings: formFeelings,
       notes: formNotes,
@@ -338,7 +473,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
           <button
             onClick={resultsStep === 'log'
               ? () => setResultsStep('metrics')
-              : () => { setPhase('record'); setMetrics(null); setResultsStep('metrics'); handleReRecord(); }
+              : () => { setPhase('record'); setMetrics(null); setResultsStep('metrics'); handleStartOver(); }
             }
             className="cursor-pointer"
           >
@@ -369,12 +504,42 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
             transition={{ duration: 0.35 }}
             className="relative z-10 flex flex-col items-center px-6 pt-6 pb-10 gap-8"
           >
+            {/* Step progress — same 3 steps as the onboarding baseline recorder */}
+            <div className="flex items-center gap-2">
+              {steps.map((_, i) => (
+                <motion.div
+                  key={i}
+                  animate={{
+                    width: i === step ? 20 : 6,
+                    background: i <= step ? '#21e8ff' : 'rgba(63,63,70,0.8)',
+                    boxShadow: i === step ? '0 0 8px rgba(33,232,255,0.75)' : 'none',
+                  }}
+                  transition={{ duration: 0.25 }}
+                  className="h-[5px] rounded-full"
+                />
+              ))}
+              <span className="text-[9px] font-mono text-zinc-600 ml-1">{step + 1} of {steps.length}</span>
+            </div>
+
             {/* Prompt */}
             <div className="w-full max-w-lg rounded-[20px] px-7 py-5 text-center" style={{ background: 'linear-gradient(135deg, rgba(23,169,201,0.06) 0%, rgba(33,232,255,0.02) 100%)', border: '1px solid rgba(33,232,255,0.18)', boxShadow: '0 0 24px rgba(33,232,255,0.04), inset 0 1px 0 rgba(33,232,255,0.08)' }}>
-              <p className="text-[10px] font-mono tracking-widest uppercase mb-2" style={{ color: 'rgba(33,232,255,0.5)' }}>Read this aloud</p>
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <p className="text-[10px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.5)' }}>{steps[step].label}</p>
+                {PHRASE_LISTS_BY_STEP[step] && (
+                  <button
+                    onClick={handleSwapPhrase}
+                    className="flex items-center justify-center w-5 h-5 rounded-full text-[#21e8ff]/60 hover:text-[#21e8ff] hover:bg-[#21e8ff]/10 transition-colors duration-150 cursor-pointer"
+                    aria-label="Try a different phrase"
+                    title="Try a different phrase"
+                  >
+                    <Shuffle className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
               <p className="text-[17px] font-light text-zinc-200 leading-relaxed italic">
-                "The early morning fog settled over the hills."
+                {steps[step].instruction}
               </p>
+              <p className="text-[9px] font-mono text-zinc-600 mt-2">{steps[step].hint}</p>
             </div>
 
             {/* Waveform */}
@@ -456,18 +621,18 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
               </motion.p>
             )}
 
-            {/* Analyze button */}
+            {/* Next step / Analyze button */}
             <AnimatePresence>
               {recordingState === 'done' && (
                 <motion.button
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  onClick={handleAnalyze}
+                  onClick={handleNextStep}
                   className="px-10 py-3.5 rounded-2xl text-[11px] font-mono tracking-widest uppercase cursor-pointer transition-all duration-300"
                   style={{ background: 'linear-gradient(135deg, rgba(23,169,201,0.25) 0%, rgba(33,232,255,0.1) 100%)', border: '1px solid rgba(33,232,255,0.5)', color: '#21e8ff', boxShadow: '0 0 28px rgba(33,232,255,0.2)' }}
                 >
-                  Analyze Voice
+                  {step < steps.length - 1 ? 'Continue' : 'Analyze Voice'}
                 </motion.button>
               )}
             </AnimatePresence>

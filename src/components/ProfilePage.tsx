@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, Pencil, Check, X, Plus, ArrowLeft } from 'lucide-react';
+import { ChevronLeft, Pencil, Check, X, Plus, ArrowLeft, ChevronRight, FileText, Trash2, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Role, ExperienceLevel, Goal, VoiceBarrier, HabitPair } from '../types/onboarding';
 import { ROLES } from './onboarding/ScreenRole';
@@ -37,6 +37,7 @@ interface ProfilePageProps {
   habitPairs: HabitPair[];
   onSave: (updates: ProfileUpdates) => void;
   onChangePassword: (newPassword: string) => Promise<string | null>;
+  onDeleteAccount: () => Promise<string | null>;
 }
 
 type Section = 'identity' | 'role' | 'experience' | 'traits' | 'goals' | 'barrier' | 'habits' | null;
@@ -150,9 +151,13 @@ function FieldModal({ title, onClose, onSave, canSave, saveLabel = 'Save', child
 }
 
 export default function ProfilePage({
-  onBack, firstName, lastName, email, role, experienceLevel, desiredVoiceTraits, voiceStatement, goals, voiceBarrier, habitPairs, onSave, onChangePassword,
+  onBack, firstName, lastName, email, role, experienceLevel, desiredVoiceTraits, voiceStatement, goals, voiceBarrier, habitPairs, onSave, onChangePassword, onDeleteAccount,
 }: ProfilePageProps) {
   const [editing, setEditing] = useState<Section>(null);
+  const [showTerms, setShowTerms] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [draftFirstName, setDraftFirstName] = useState(firstName);
   const [draftLastName, setDraftLastName] = useState(lastName);
@@ -209,6 +214,16 @@ export default function ProfilePage({
     setNewPassword('');
     setConfirmPassword('');
     setEditing(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    const error = await onDeleteAccount();
+    setDeleting(false);
+    if (error) { setDeleteError(error); return; }
+    setShowDeleteConfirm(false);
+    // On success, App.tsx's onAuthStateChange SIGNED_OUT handler takes it from here.
   };
 
   const roleInfo = ROLES.find(r => r.id === role);
@@ -436,6 +451,32 @@ export default function ProfilePage({
             )}
           </div>
 
+          {/* Account — sits at the bottom of the page */}
+          <div className="flex flex-col items-start gap-1 mt-2">
+            <h3 className="text-base font-light tracking-tight text-white">Account</h3>
+            <div className="flex flex-col gap-2.5 w-full mt-4">
+              <button
+                onClick={() => setShowTerms(true)}
+                className="flex items-center gap-3 w-full px-4 py-3.5 rounded-2xl border text-left transition-all duration-150 cursor-pointer hover:bg-white/[0.03]"
+                style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.08)' }}
+              >
+                <FileText className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+                <span className="text-[13px] text-zinc-300 flex-1">Terms & Conditions</span>
+                <ChevronRight className="w-4 h-4 text-zinc-600 flex-shrink-0" />
+              </button>
+
+              <button
+                onClick={() => { setDeleteError(null); setShowDeleteConfirm(true); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 rounded-2xl border text-left transition-all duration-150 cursor-pointer hover:bg-rose-500/[0.06]"
+                style={{ background: 'rgba(244,63,94,0.03)', borderColor: 'rgba(244,63,94,0.15)' }}
+              >
+                <Trash2 className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                <span className="text-[13px] text-rose-400 flex-1">Delete Account</span>
+                <ChevronRight className="w-4 h-4 text-rose-400/50 flex-shrink-0" />
+              </button>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -611,6 +652,94 @@ export default function ProfilePage({
               ))}
             </div>
           </FieldModal>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showTerms && (
+          <FieldModal
+            title="Terms & Conditions"
+            onClose={() => setShowTerms(false)}
+            onSave={() => setShowTerms(false)}
+            canSave={true}
+            saveLabel="Close"
+          >
+            <div
+              className="max-h-56 overflow-y-auto rounded-2xl px-4 py-4 text-[11.5px] leading-relaxed text-zinc-400"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <p className="mb-3">
+                By using Vocalii, you agree to our Terms of Service and Privacy Policy. Vocalii provides
+                vocal coaching guidance, tracking, and wellness tools for informational purposes only —
+                it is not a substitute for professional medical or clinical advice.
+              </p>
+              <p className="mb-3">
+                Your voice recordings and check-in data are stored securely and used solely to power your
+                personal coaching experience. We do not sell your data to third parties.
+              </p>
+              <p>
+                You can request deletion of your account and associated data at any time from within the
+                app settings.
+              </p>
+            </div>
+          </FieldModal>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(10px)' }}
+            onClick={() => !deleting && setShowDeleteConfirm(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+              className="relative w-full max-w-md rounded-[28px] p-6 flex flex-col gap-5"
+              style={{ background: 'linear-gradient(160deg, #190f11 0%, #0b0e14 100%)', border: '1px solid rgba(244,63,94,0.25)', boxShadow: '0 24px 80px rgba(0,0,0,0.8)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="absolute top-0 left-0 right-0 h-px rounded-t-[28px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(244,63,94,0.35), transparent)' }} />
+
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(244,63,94,0.12)', border: '1px solid rgba(244,63,94,0.3)' }}>
+                  <AlertTriangle className="w-4 h-4 text-rose-400" />
+                </div>
+                <p className="text-[13px] font-medium text-white">Delete your account?</p>
+              </div>
+
+              <p className="text-[12.5px] text-zinc-400 leading-relaxed">
+                This permanently deletes your account and everything tied to it — check-ins, weekly reports,
+                voice analyses, ritual history, and habits. This can't be undone.
+              </p>
+
+              {deleteError && <p className="text-[11.5px] text-rose-400">{deleteError}</p>}
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={deleting}
+                  className="flex-1 h-11 rounded-xl text-[11px] tracking-widest uppercase font-medium text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={deleting}
+                  className="flex-1 h-11 rounded-xl text-[11px] tracking-widest uppercase font-medium text-rose-300 hover:text-white transition-all duration-200 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                  style={{ background: 'linear-gradient(135deg, rgba(244,63,94,0.25) 0%, rgba(244,63,94,0.12) 100%)', border: '1px solid rgba(244,63,94,0.5)' }}
+                >
+                  {deleting ? 'Deleting...' : 'Delete My Account'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

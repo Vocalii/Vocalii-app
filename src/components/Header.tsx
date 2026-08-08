@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, MapPin, Check, Sparkles, Bell, Info, Plus, User, Settings, LogOut, X } from 'lucide-react';
+import { Search, MapPin, Check, Sparkles, Bell, Info, Plus, User, LogOut, X } from 'lucide-react';
 import { Destination } from '../types';
 
 export interface AppNotification {
@@ -287,10 +287,6 @@ export default function Header({
                 >
                   <User className="w-3 h-3 text-zinc-500" />
                   Profile
-                </button>
-                <button className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-zinc-300 hover:text-white hover:bg-white/5 transition-colors duration-150 cursor-pointer">
-                  <Settings className="w-3 h-3 text-zinc-500" />
-                  Settings
                 </button>
                 <div className="h-px mx-2.5 my-0.5" style={{ background: 'rgba(255,255,255,0.06)' }} />
                 <button

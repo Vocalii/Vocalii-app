@@ -1,9 +1,24 @@
 import express from 'express';
 import path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
+import { createClient } from '@supabase/supabase-js';
 import { EXERCISE_RITUALS, loadRitualsFromSanity } from './src/ritualsData.js';
 
 const PORT = 3000;
+
+// Service-role Supabase client — server-only, never exposed to the browser. Used exclusively to
+// verify a user's own access token and then delete their auth account (which cascades to every
+// user-owned table via the ON DELETE CASCADE foreign keys already in supabase/schema.sql).
+// SUPABASE_URL reuses the same value as the client's VITE_SUPABASE_URL — `tsx --env-file-if-exists`
+// loads every var from .env.local into process.env regardless of the VITE_ prefix, so it's already
+// available here without duplicating it under a second name.
+const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(
+      process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? '',
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+  : null;
 
 // Fire-and-forget rather than a top-level await: esbuild's CJS output (the self-host bundle
 // target) doesn't support top-level await syntax at all. Everything below that depends on ritual
@@ -633,6 +648,46 @@ app.post('/api/escalation-insight', async (req, res) => {
   } catch (err) {
     console.error('escalation-insight error:', err);
     res.status(500).json({ error: 'Failed to reach the AI service.' });
+  }
+});
+
+// Deletes the requesting user's own account and, via the ON DELETE CASCADE foreign keys already
+// on every user-owned table (supabase/schema.sql), everything they've ever logged — check-ins,
+// reports, rituals, habits, everything. The access token in the Authorization header is verified
+// against Supabase first, so this can only ever delete the token's own account, never an
+// arbitrary id passed in the request body.
+app.post('/api/delete-account', async (req, res) => {
+  if (!supabaseAdmin) {
+    console.error('[delete-account] SUPABASE_SERVICE_ROLE_KEY not set — cannot delete accounts');
+    res.status(500).json({ error: 'Account deletion is not configured on this server.' });
+    return;
+  }
+
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : null;
+  if (!token) {
+    res.status(401).json({ error: 'Missing access token.' });
+    return;
+  }
+
+  try {
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError || !userData.user) {
+      res.status(401).json({ error: 'Invalid or expired session.' });
+      return;
+    }
+
+    const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userData.user.id);
+    if (deleteError) {
+      console.error('[delete-account] deleteUser failed:', deleteError);
+      res.status(500).json({ error: 'Failed to delete account.' });
+      return;
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('delete-account error:', err);
+    res.status(500).json({ error: 'Failed to delete account.' });
   }
 });
 

@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Clock, HeartCrack, BatteryLow } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Clock, HeartCrack, BatteryLow, CircleSlash } from 'lucide-react';
 import { VoiceBarrier } from '../../types/onboarding';
 import OnboardingLogo from './OnboardingLogo';
 import OnboardingStepProgress from './OnboardingStepProgress';
@@ -30,6 +30,12 @@ export const CLUSTERS: { id: VoiceBarrier; label: string; description: string; i
     label: 'Physical Demands',
     description: 'My voice gets tired quickly, my workday is vocally demanding, or I push through instead of resting.',
     icon: <BatteryLow className="w-6 h-6" />,
+  },
+  {
+    id: 'none',
+    label: 'None of these',
+    description: "I don't feel like anything in particular is holding me back right now.",
+    icon: <CircleSlash className="w-6 h-6" />,
   },
 ];
 

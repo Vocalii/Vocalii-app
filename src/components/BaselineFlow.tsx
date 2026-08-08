@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mic, Square, Check, ArrowRight } from 'lucide-react';
+import { Mic, Square, Check, ArrowRight, Shuffle } from 'lucide-react';
+import { READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS, pickRandomPhrase } from '../lib/recordingPrompts';
 
 export interface BaselineMetrics {
   score: number;
@@ -17,23 +18,31 @@ interface BaselineFlowProps {
   onSkip?: () => void;
 }
 
-const STEPS = [
-  {
-    label: 'Sustained Vowel',
-    instruction: 'Say /ah/ and hold it steadily',
-    hint: '~5 seconds',
-  },
-  {
-    label: 'Read Aloud',
-    instruction: '"The early morning fog settled gently over the rolling hills, and the birds began to sing."',
-    hint: '~20–30 seconds',
-  },
-  {
-    label: 'Free Speech',
-    instruction: 'Tell us how you use your voice in your daily life.',
-    hint: '~20–30 seconds',
-  },
-];
+// Read Aloud / Free Speech get a random phrase each time (see recordingPrompts.ts) — picked once
+// per attempt via buildSteps(), not on every render.
+function buildSteps() {
+  return [
+    {
+      label: 'Sustained Vowel',
+      instruction: 'Say /ah/ and hold it steadily',
+      hint: '~5 seconds',
+    },
+    {
+      label: 'Read Aloud',
+      instruction: pickRandomPhrase(READ_ALOUD_PHRASES),
+      hint: '~20–30 seconds',
+    },
+    {
+      label: 'Free Speech',
+      instruction: pickRandomPhrase(FREE_SPEECH_PROMPTS),
+      hint: '~20–30 seconds',
+    },
+  ];
+}
+
+// Which phrase pool (if any) backs each step's instruction — null for Sustained Vowel, which has
+// no variety to swap between.
+const PHRASE_LISTS_BY_STEP: (string[] | null)[] = [null, READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS];
 
 const BAR_COUNT = 28;
 
@@ -130,6 +139,7 @@ function computeSegmentMetrics(
 
 export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) {
   const [step, setStep] = useState(0);
+  const [steps, setSteps] = useState(buildSteps);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'done'>('idle');
   const [seconds, setSeconds] = useState(0);
   const [barHeights, setBarHeights] = useState<number[]>(new Array(BAR_COUNT).fill(0.06));
@@ -277,6 +287,7 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
 
   const handleStartOver = () => {
     setStep(0);
+    setSteps(buildSteps());
     setRecordingState('idle');
     setSeconds(0);
     pitchReadingsRef.current = [];
@@ -286,11 +297,23 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
     allSampleRates.current = [44100, 44100, 44100];
   };
 
+  // Swaps just the current step's phrase for a different random one from the same pool — lets
+  // someone reroll "Read Aloud"/"Free Speech" before recording without restarting the whole flow.
+  const handleSwapPhrase = () => {
+    const list = PHRASE_LISTS_BY_STEP[step];
+    if (!list) return;
+    setSteps(prev => {
+      const next = [...prev];
+      next[step] = { ...next[step], instruction: pickRandomPhrase(list, next[step].instruction) };
+      return next;
+    });
+  };
+
   const formatTime = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
   // ── Recording step ────────────────────────────────────────────────────────────
-  const currentStep = STEPS[step];
+  const currentStep = steps[step];
 
   return (
     <div className="flex flex-col items-center gap-5 px-8 py-6">
@@ -307,7 +330,7 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
 
       {/* Step indicators */}
       <div className="flex items-center gap-2">
-        {STEPS.map((_, i) => (
+        {steps.map((_, i) => (
           <motion.div
             key={i}
             animate={{
@@ -324,13 +347,25 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
 
       {/* Instruction card */}
       <div
-        className="w-full rounded-2xl px-5 py-4 text-center"
+        className="w-full rounded-2xl px-5 py-4 text-center relative"
         style={{
           background: 'rgba(167,139,250,0.05)',
           border: '1px solid rgba(167,139,250,0.15)',
         }}
       >
-        <p className="text-[9px] font-mono tracking-widest uppercase text-violet-400/70 mb-2">{currentStep.label}</p>
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <p className="text-[9px] font-mono tracking-widest uppercase text-violet-400/70">{currentStep.label}</p>
+          {PHRASE_LISTS_BY_STEP[step] && (
+            <button
+              onClick={handleSwapPhrase}
+              className="flex items-center justify-center w-5 h-5 rounded-full text-violet-400/60 hover:text-violet-300 hover:bg-violet-400/10 transition-colors duration-150 cursor-pointer"
+              aria-label="Try a different phrase"
+              title="Try a different phrase"
+            >
+              <Shuffle className="w-3 h-3" />
+            </button>
+          )}
+        </div>
         <p className="text-[14px] font-light text-zinc-200 leading-relaxed italic">{currentStep.instruction}</p>
         <p className="text-[9px] font-mono text-zinc-600 mt-2">{currentStep.hint}</p>
       </div>
