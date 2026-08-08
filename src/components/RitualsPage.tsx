@@ -82,7 +82,7 @@ function RitualFeedbackSlider({ label, value, onChange, accent }: { label: strin
 
 interface RitualsPageProps {
   dailyRitualIds: string[];
-  activePrepEvent?: { title: string; daysLeft: number } | null;
+  activePrepEvent?: { title: string; daysLeft: number; aiInsight: string | null } | null;
   completedRitualIds: string[];
   onCompleteRitual: (id: string, feelingRating: number | null, difficultyRating: number | null) => void;
   onRestartRoutine: () => void;
@@ -358,9 +358,11 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                   </div>
                 )}
                 <p className="text-[11.5px] text-zinc-400 max-w-2xl leading-relaxed mb-3">
-                  {checkInDone && ritualInsight
-                    ? ritualInsight
-                    : 'Complete your personalized voice exercises and daily check-in to build healthier vocal habits and track your progress.'}
+                  {activePrepEvent?.aiInsight
+                    ? activePrepEvent.aiInsight
+                    : checkInDone && ritualInsight
+                      ? ritualInsight
+                      : 'Complete your personalized voice exercises and daily check-in to build healthier vocal habits and track your progress.'}
                 </p>
                 <div className="flex items-center gap-2.5 flex-wrap">
                   {/* Daily Check-In Button */}

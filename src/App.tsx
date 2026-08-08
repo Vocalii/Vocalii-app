@@ -808,6 +808,7 @@ export default function App() {
         return {
           title: activePrepEvent.title,
           daysLeft: Math.max(0, Math.round((eventMidnight.getTime() - todayMidnight.getTime()) / (1000 * 60 * 60 * 24))),
+          aiInsight: activePrepEvent.aiInsight ?? null,
         };
       })()
     : null;
