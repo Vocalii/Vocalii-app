@@ -10,11 +10,14 @@ import './index.css';
 // EXERCISE_RITUALS/DAILY_HABITS/VOCAL_HABITS/TRAITS synchronously on first render already see
 // Sanity's data rather than the static fallback. All three are internally time-boxed (each
 // loader's own timeout), so a slow/offline Sanity delays boot briefly rather than hanging — none
-// of them throw.
-await Promise.all([loadRitualsFromSanity(), loadHabitsFromSanity(), loadTraitsFromSanity()]);
+// of them throw. Wrapped in an async IIFE rather than a top-level await: Vite's production build
+// targets browser/esbuild versions that don't support top-level await syntax at all.
+(async () => {
+  await Promise.all([loadRitualsFromSanity(), loadHabitsFromSanity(), loadTraitsFromSanity()]);
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+})();
