@@ -1,14 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Send, ChevronLeft, Flame, Droplet, HeartCrack, Activity, Compass, Sparkles } from 'lucide-react';
+import { X, Send, ChevronLeft, Sparkles, Anchor, Wind, Flame, Feather, AudioWaveform, Hammer } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { EXERCISE_RITUALS } from '../ritualsData';
 
+// Same category → color/icon mapping as RitualsPage.tsx's getDetailHeroTheme, kept in sync so a
+// ritual's category reads identically here (plan-summary bubbles) and there (ritual detail hero).
 const CATEGORY_STYLE: Record<string, { color: string; Icon: typeof Sparkles }> = {
-  'Warm-up': { color: '#fbbf24', Icon: Flame },
-  'Hydration': { color: '#60a5fa', Icon: Droplet },
-  'Relief': { color: '#fb7185', Icon: HeartCrack },
-  'Resonance': { color: '#a78bfa', Icon: Activity },
-  'Calibrate': { color: '#22d3ee', Icon: Compass },
+  Ground: { color: '#fbbf24', Icon: Anchor },
+  Breathe: { color: '#22d3ee', Icon: Wind },
+  'Warm Up': { color: '#fb923c', Icon: Flame },
+  Release: { color: '#34d399', Icon: Feather },
+  Resonate: { color: '#e879f9', Icon: AudioWaveform },
+  Build: { color: '#fb7185', Icon: Hammer },
 };
 
 function CategoryBubble({ category }: { category: string }) {

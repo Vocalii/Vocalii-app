@@ -238,6 +238,7 @@ function fallbackSelection(
   categorySequence: Ritual['category'][],
   worseRatedRitualIds: Set<string>,
   preferredDifficulties: Ritual['difficulty'][],
+  preferredEventRitualIds: Set<string>,
 ): Ritual[] {
   return categorySequence
     .map(category => {
@@ -245,6 +246,10 @@ function fallbackSelection(
       if (candidates.length === 0) return null;
       const untainted = candidates.filter(r => !worseRatedRitualIds.has(r.id));
       const pool = untainted.length > 0 ? untainted : candidates;
+      // Event-prep bias: prefer a ritual from the original prep plan if one exists in this
+      // slot's pool and isn't rated "worse" — same slot, different day, still nudged toward plan.
+      const eventMatched = pool.filter(r => preferredEventRitualIds.has(r.id));
+      if (eventMatched.length > 0) return eventMatched[0];
       const difficultyMatched = pool.filter(r => preferredDifficulties.includes(r.difficulty));
       return (difficultyMatched.length > 0 ? difficultyMatched : pool)[0];
     })
@@ -262,13 +267,10 @@ export async function selectRituals(
   checkin: DailyCheckinContext,
   activePrepEvent: { tailoredRitualIds: string[] } | null,
 ): Promise<RitualSelectionResult> {
-  // Performance mode always wins — skips the Claude call, the safety check, everything.
-  if (activePrepEvent && activePrepEvent.tailoredRitualIds.length > 0) {
-    const rituals = activePrepEvent.tailoredRitualIds
-      .map(id => EXERCISE_RITUALS.find(r => r.id === id))
-      .filter((r): r is Ritual => r != null);
-    return { status: 'ok', rituals, insight: null };
-  }
+  // Event-prep mode no longer locks in a fixed daily list — it still runs the normal check-in-
+  // driven selection below (safety checks, feedback, difficulty, everything), just biased toward
+  // the rituals from the original prep plan (see preferredEventRitualIds below).
+  const preferredEventRitualIds = new Set(activePrepEvent?.tailoredRitualIds ?? []);
 
   if (checkEscalation(checkin.notes)) {
     const insight = await fetchEscalationInsight('note', checkin);
@@ -355,6 +357,7 @@ export async function selectRituals(
         hasTimeBarrier,
         hasPhysicalDemandsBarrier,
         preferredDifficulties,
+        preferredEventRitualIds: [...preferredEventRitualIds],
       }),
     });
     if (!res.ok) throw new Error('select-rituals request failed');
@@ -370,7 +373,7 @@ export async function selectRituals(
       : `Today's routine was put together from your check-in — focused on your ${checkin.supportArea.toLowerCase()} and today's ${voiceStatus.replace('_', ' ')} voice status.`;
     return {
       status: 'ok',
-      rituals: fallbackSelection(categorySequence, worseRatedRitualIds, preferredDifficulties),
+      rituals: fallbackSelection(categorySequence, worseRatedRitualIds, preferredDifficulties, preferredEventRitualIds),
       insight: fallbackInsight,
     };
   }

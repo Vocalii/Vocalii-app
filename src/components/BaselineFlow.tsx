@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mic, Square, Check, ArrowRight, Shuffle } from 'lucide-react';
-import { READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS, pickRandomPhrase } from '../lib/recordingPrompts';
+import { READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS, TWISTER_PHRASES, pickRandomPhrase } from '../lib/recordingPrompts';
 
 export interface BaselineMetrics {
   score: number;
@@ -28,6 +28,11 @@ function buildSteps() {
       hint: '~5 seconds',
     },
     {
+      label: 'Twisters',
+      instruction: pickRandomPhrase(TWISTER_PHRASES),
+      hint: '~20–30 seconds',
+    },
+    {
       label: 'Read Aloud',
       instruction: pickRandomPhrase(READ_ALOUD_PHRASES),
       hint: '~20–30 seconds',
@@ -42,7 +47,7 @@ function buildSteps() {
 
 // Which phrase pool (if any) backs each step's instruction — null for Sustained Vowel, which has
 // no variety to swap between.
-const PHRASE_LISTS_BY_STEP: (string[] | null)[] = [null, READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS];
+const PHRASE_LISTS_BY_STEP: (string[] | null)[] = [null, TWISTER_PHRASES, READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS];
 
 const BAR_COUNT = 28;
 
@@ -152,11 +157,11 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
   const pitchReadingsRef = useRef<number[]>([]);
   const lastPitchTimeRef = useRef<number>(0);
 
-  // Per-segment captured data
-  const allPitchReadings = useRef<number[][]>([[], [], []]);
-  const allFftSnapshots = useRef<(Float32Array | null)[]>([null, null, null]);
-  const allTimeDomainSnapshots = useRef<(Float32Array | null)[]>([null, null, null]);
-  const allSampleRates = useRef<number[]>([44100, 44100, 44100]);
+  // Per-segment captured data — one slot per buildSteps() entry
+  const allPitchReadings = useRef<number[][]>([[], [], [], []]);
+  const allFftSnapshots = useRef<(Float32Array | null)[]>([null, null, null, null]);
+  const allTimeDomainSnapshots = useRef<(Float32Array | null)[]>([null, null, null, null]);
+  const allSampleRates = useRef<number[]>([44100, 44100, 44100, 44100]);
 
   const stopAudio = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
@@ -235,13 +240,13 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
   };
 
   const handleNext = () => {
-    if (step < 2) {
+    if (step < steps.length - 1) {
       setStep(s => s + 1);
       setRecordingState('idle');
       setSeconds(0);
     } else {
       // Compute all metrics per segment, then combine
-      const segMetrics = [0, 1, 2].map(i => computeSegmentMetrics(
+      const segMetrics = [0, 1, 2, 3].map(i => computeSegmentMetrics(
         allPitchReadings.current[i],
         allFftSnapshots.current[i],
         allTimeDomainSnapshots.current[i],
@@ -249,13 +254,14 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
       ));
 
       const avg = (key: keyof SegmentMetrics) =>
-        Math.round((segMetrics[0][key] + segMetrics[1][key] + segMetrics[2][key]) / 3);
+        Math.round((segMetrics[0][key] + segMetrics[1][key] + segMetrics[2][key] + segMetrics[3][key]) / 4);
 
       // Stability weighted: vowel most diagnostic
       const stability = Math.round(
-        segMetrics[0].stabilityPct * 0.40 +
-        segMetrics[1].stabilityPct * 0.35 +
-        segMetrics[2].stabilityPct * 0.25,
+        segMetrics[0].stabilityPct * 0.35 +
+        segMetrics[1].stabilityPct * 0.15 +
+        segMetrics[2].stabilityPct * 0.30 +
+        segMetrics[3].stabilityPct * 0.20,
       );
       const resonance = avg('resonanceScore');
       const clarity = avg('clarityPct');
@@ -291,10 +297,10 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
     setRecordingState('idle');
     setSeconds(0);
     pitchReadingsRef.current = [];
-    allPitchReadings.current = [[], [], []];
-    allFftSnapshots.current = [null, null, null];
-    allTimeDomainSnapshots.current = [null, null, null];
-    allSampleRates.current = [44100, 44100, 44100];
+    allPitchReadings.current = [[], [], [], []];
+    allFftSnapshots.current = [null, null, null, null];
+    allTimeDomainSnapshots.current = [null, null, null, null];
+    allSampleRates.current = [44100, 44100, 44100, 44100];
   };
 
   // Swaps just the current step's phrase for a different random one from the same pool — lets
@@ -342,7 +348,7 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
             className="h-[5px] rounded-full"
           />
         ))}
-        <span className="text-[9px] font-mono text-zinc-600 ml-1">{step + 1} of 3</span>
+        <span className="text-[9px] font-mono text-zinc-600 ml-1">{step + 1} of {steps.length}</span>
       </div>
 
       {/* Instruction card */}
@@ -474,7 +480,7 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
           }`}
           style={recordingState === 'done' ? { boxShadow: '0 0 20px rgba(167,139,250,0.15)' } : {}}
         >
-          {step < 2 ? 'Next →' : 'Finish →'}
+          {step < steps.length - 1 ? 'Next →' : 'Finish →'}
         </button>
       </div>
     </div>

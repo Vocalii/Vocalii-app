@@ -26,12 +26,22 @@ const FALLBACK_FREE_SPEECH_PROMPTS: string[] = [
   'Share a bit about what your ideal weekend looks like.',
 ];
 
+const FALLBACK_TWISTER_PHRASES: string[] = [
+  'Red leather, yellow leather.',
+  'She sells seashells by the seashore.',
+  'Unique New York, unique New York.',
+  'Six slippery snails slid slowly seaward.',
+  'Toy boat, toy boat, toy boat.',
+  'Peter Piper picked a peck of pickled peppers.',
+];
+
 // Mutable — populated from the FALLBACK_* arrays at module load, then swapped in place by
 // loadRecordingPromptsFromSanity() below. Every existing call site holds a reference to these
 // same arrays, so mutating their contents (rather than reassigning the export) means none of
 // them need to change to pick up live data.
 export const READ_ALOUD_PHRASES: string[] = [...FALLBACK_READ_ALOUD_PHRASES];
 export const FREE_SPEECH_PROMPTS: string[] = [...FALLBACK_FREE_SPEECH_PROMPTS];
+export const TWISTER_PHRASES: string[] = [...FALLBACK_TWISTER_PHRASES];
 
 // `exclude` skips re-picking the currently-shown phrase (used by the "swap phrase" button) so
 // clicking it always visibly changes the text, rather than sometimes landing on the same one.
@@ -45,7 +55,7 @@ const SANITY_DATASET = 'vocalii';
 const SANITY_API_VERSION = '2024-01-01';
 
 interface SanityRecordingPromptDoc {
-  kind: 'read_aloud' | 'free_speech';
+  kind: 'read_aloud' | 'free_speech' | 'twister';
   text: string;
 }
 
@@ -71,12 +81,15 @@ export async function loadRecordingPromptsFromSanity(timeoutMs = 4000): Promise<
 
     const readAloud = result.filter(d => d.kind === 'read_aloud').map(d => d.text);
     const freeSpeech = result.filter(d => d.kind === 'free_speech').map(d => d.text);
-    if (readAloud.length === 0 || freeSpeech.length === 0) return; // keep whatever's currently loaded
+    const twisters = result.filter(d => d.kind === 'twister').map(d => d.text);
+    if (readAloud.length === 0 || freeSpeech.length === 0 || twisters.length === 0) return; // keep whatever's currently loaded
 
     READ_ALOUD_PHRASES.length = 0;
     READ_ALOUD_PHRASES.push(...readAloud);
     FREE_SPEECH_PROMPTS.length = 0;
     FREE_SPEECH_PROMPTS.push(...freeSpeech);
+    TWISTER_PHRASES.length = 0;
+    TWISTER_PHRASES.push(...twisters);
   } catch (err) {
     console.error('[recordingPrompts] Failed to load from Sanity, using fallback/cached data:', err);
   }

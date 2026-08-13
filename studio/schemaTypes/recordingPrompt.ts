@@ -17,6 +17,7 @@ export default defineType({
         list: [
           {title: 'Read Aloud (a passage to read verbatim)', value: 'read_aloud'},
           {title: 'Free Speech (a prompt to talk about)', value: 'free_speech'},
+          {title: 'Twisters (a tongue twister to read verbatim)', value: 'twister'},
         ],
       },
       validation: (Rule) => Rule.required(),
@@ -40,7 +41,10 @@ export default defineType({
   preview: {
     select: {title: 'text', subtitle: 'kind'},
     prepare({title, subtitle}) {
-      return {title, subtitle: subtitle === 'read_aloud' ? 'Read Aloud' : 'Free Speech'}
+      return {
+        title,
+        subtitle: subtitle === 'read_aloud' ? 'Read Aloud' : subtitle === 'twister' ? 'Twisters' : 'Free Speech',
+      }
     },
   },
 })

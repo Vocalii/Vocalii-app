@@ -348,16 +348,16 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                   <div
                     className="mb-2.5 flex items-center gap-2 rounded-full w-fit"
                   >
-                    <span className="text-[10.5px] font-mono text-zinc-300 tracking-wide">
+                    <span className="text-[10.5px] font-semibold text-zinc-300 tracking-wide">
                       <span className="text-[#60a5fa] font-semibold">Prep Mode</span> · {activePrepEvent.title}
                     </span>
                     <span className="w-px h-3 bg-[#60a5fa]/25 flex-shrink-0" />
-                    <span className="text-[10.5px] font-mono font-semibold text-[#60a5fa] whitespace-nowrap">
+                    <span className="text-[10.5px] font-semibold text-[#60a5fa] whitespace-nowrap">
                       {activePrepEvent.daysLeft}d left
                     </span>
                   </div>
                 )}
-                <p className="text-[11.5px] text-zinc-400 max-w-2xl leading-relaxed mb-3">
+                <p className="text-[11.5px] text-zinc-400 max-w-2xl leading-relaxed mb-3 font-medium">
                   {activePrepEvent?.aiInsight
                     ? activePrepEvent.aiInsight
                     : checkInDone && ritualInsight
@@ -1131,11 +1131,11 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                     <div className="relative z-10">
                       {/* Header line: Category + duration info with a color-coded dot */}
                       <div className="flex items-center justify-between mb-4">
-                        <span className="inline-flex items-center gap-1.5 text-[9.5px] font-mono tracking-wide text-zinc-400">
+                        <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-wide text-zinc-400">
                           <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
                           {ritual.category}
                         </span>
-                        <div className="flex items-center gap-1 text-[10px] text-zinc-500 font-mono">
+                        <div className="flex items-center gap-1 text-[10px] text-zinc-500 font-semibold">
                           <Clock className="w-3 h-3" />
                           <span>{ritual.duration}</span>
                         </div>

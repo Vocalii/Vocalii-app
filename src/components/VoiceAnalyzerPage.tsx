@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, Mic, Square, Check, Activity, Shuffle } from 'lucide-react';
 import { VocalReport } from '../types/onboarding';
-import { READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS, pickRandomPhrase } from '../lib/recordingPrompts';
+import { READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS, TWISTER_PHRASES, pickRandomPhrase } from '../lib/recordingPrompts';
 
 interface VoiceAnalyzerPageProps {
   onBack: () => void;
@@ -60,6 +60,11 @@ function buildSteps() {
       hint: '~5 seconds',
     },
     {
+      label: 'Twisters',
+      instruction: pickRandomPhrase(TWISTER_PHRASES),
+      hint: '~20–30 seconds',
+    },
+    {
       label: 'Read Aloud',
       instruction: pickRandomPhrase(READ_ALOUD_PHRASES),
       hint: '~20–30 seconds',
@@ -74,7 +79,7 @@ function buildSteps() {
 
 // Which phrase pool (if any) backs each step's instruction — null for Sustained Vowel, which has
 // no variety to swap between.
-const PHRASE_LISTS_BY_STEP: (string[] | null)[] = [null, READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS];
+const PHRASE_LISTS_BY_STEP: (string[] | null)[] = [null, TWISTER_PHRASES, READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS];
 
 interface SegmentMetrics {
   pitchHz: number;
@@ -209,10 +214,10 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   const lastPitchTime = useRef<number>(0);
 
   // Per-step captured data — one slot per STEPS entry, combined in computeMetrics() below.
-  const allPitchReadings = useRef<number[][]>([[], [], []]);
-  const allFftSnapshots = useRef<(Float32Array | null)[]>([null, null, null]);
-  const allTimeDomainSnapshots = useRef<(Float32Array | null)[]>([null, null, null]);
-  const allSampleRates = useRef<number[]>([44100, 44100, 44100]);
+  const allPitchReadings = useRef<number[][]>([[], [], [], []]);
+  const allFftSnapshots = useRef<(Float32Array | null)[]>([null, null, null, null]);
+  const allTimeDomainSnapshots = useRef<(Float32Array | null)[]>([null, null, null, null]);
+  const allSampleRates = useRef<number[]>([44100, 44100, 44100, 44100]);
 
   const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
@@ -319,7 +324,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   // weights as BaselineFlow.tsx's onboarding baseline, so a voice-analyzer report scores an
   // equivalent recording the same way the baseline does.
   const computeMetrics = useCallback((): VocalMetrics => {
-    const segMetrics = [0, 1, 2].map(i => computeSegmentMetrics(
+    const segMetrics = [0, 1, 2, 3].map(i => computeSegmentMetrics(
       allPitchReadings.current[i],
       allFftSnapshots.current[i],
       allTimeDomainSnapshots.current[i],
@@ -327,13 +332,14 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     ));
 
     const avg = (key: keyof SegmentMetrics) =>
-      Math.round((segMetrics[0][key] + segMetrics[1][key] + segMetrics[2][key]) / 3);
+      Math.round((segMetrics[0][key] + segMetrics[1][key] + segMetrics[2][key] + segMetrics[3][key]) / 4);
 
     // Stability weighted: vowel most diagnostic (matches BaselineFlow.tsx exactly).
     const stabilityPct = Math.round(
-      segMetrics[0].stabilityPct * 0.40 +
-      segMetrics[1].stabilityPct * 0.35 +
-      segMetrics[2].stabilityPct * 0.25,
+      segMetrics[0].stabilityPct * 0.35 +
+      segMetrics[1].stabilityPct * 0.15 +
+      segMetrics[2].stabilityPct * 0.30 +
+      segMetrics[3].stabilityPct * 0.20,
     );
     const resonanceScore = avg('resonanceScore');
     const clarityPct = avg('clarityPct');
@@ -363,7 +369,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
 
   // Advances to the next of the 3 recording steps, or triggers the final analysis after step 3.
   const handleNextStep = () => {
-    if (step < 2) {
+    if (step < steps.length - 1) {
       setStep(s => s + 1);
       setRecordingState('idle');
       setSeconds(0);
@@ -382,10 +388,10 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     setTotalSeconds(0);
     setBarHeights(new Array(28).fill(0.08));
     pitchReadings.current = [];
-    allPitchReadings.current = [[], [], []];
-    allFftSnapshots.current = [null, null, null];
-    allTimeDomainSnapshots.current = [null, null, null];
-    allSampleRates.current = [44100, 44100, 44100];
+    allPitchReadings.current = [[], [], [], []];
+    allFftSnapshots.current = [null, null, null, null];
+    allTimeDomainSnapshots.current = [null, null, null, null];
+    allSampleRates.current = [44100, 44100, 44100, 44100];
   };
 
   // Swaps just the current step's phrase for a different random one from the same pool — lets
@@ -431,6 +437,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     const now = new Date();
     const autoName = `Vocal Report — ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
     onSave({
+      name: autoName,
       ritualName: autoName,
       category: 'Calibrate',
       date: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),

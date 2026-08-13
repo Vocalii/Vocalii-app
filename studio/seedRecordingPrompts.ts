@@ -29,6 +29,15 @@ const FREE_SPEECH_PROMPTS: string[] = [
   'Share a bit about what your ideal weekend looks like.',
 ]
 
+const TWISTER_PHRASES: string[] = [
+  'Red leather, yellow leather.',
+  'She sells seashells by the seashore.',
+  'Unique New York, unique New York.',
+  'Six slippery snails slid slowly seaward.',
+  'Toy boat, toy boat, toy boat.',
+  'Peter Piper picked a peck of pickled peppers.',
+]
+
 async function run() {
   const transaction = client.transaction()
   READ_ALOUD_PHRASES.forEach((text, i) => {
@@ -49,8 +58,17 @@ async function run() {
       sortOrder: i,
     })
   })
+  TWISTER_PHRASES.forEach((text, i) => {
+    transaction.createOrReplace({
+      _id: `recording-prompt-twister-${i}`,
+      _type: 'recordingPrompt',
+      kind: 'twister',
+      text,
+      sortOrder: i,
+    })
+  })
   await transaction.commit()
-  console.log(`Seeded ${READ_ALOUD_PHRASES.length + FREE_SPEECH_PROMPTS.length} recording prompts.`)
+  console.log(`Seeded ${READ_ALOUD_PHRASES.length + FREE_SPEECH_PROMPTS.length + TWISTER_PHRASES.length} recording prompts.`)
 }
 
 run().catch((err) => {

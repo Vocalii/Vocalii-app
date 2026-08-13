@@ -3,6 +3,7 @@ import path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 import { EXERCISE_RITUALS, loadRitualsFromSanity } from './src/ritualsData.js';
+import { getAiTone, startAiToneRefreshLoop } from './src/lib/aiTone.js';
 
 const PORT = 3000;
 
@@ -26,10 +27,14 @@ const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY
 // self-corrects the moment this resolves, regardless of whether that's before or after the first
 // request — falls back to (and never clears) the static FALLBACK_RITUALS seed on any failure.
 void loadRitualsFromSanity();
+startAiToneRefreshLoop();
 
 function getRitualIdList(): string[] {
   return EXERCISE_RITUALS.map(r => r.id);
 }
+
+const PREP_MIN_RITUAL_COUNT = 3;
+const PREP_MAX_RITUAL_COUNT = 5;
 
 function buildCommitPlanTool(): Anthropic.Tool {
   return {
@@ -41,11 +46,13 @@ function buildCommitPlanTool(): Anthropic.Tool {
         ritualIds: {
           type: 'array',
           items: { type: 'string', enum: getRitualIdList() },
-          description: 'Ordered list of ritual ids to feature during the prep window, most important first.',
+          minItems: PREP_MIN_RITUAL_COUNT,
+          maxItems: PREP_MAX_RITUAL_COUNT,
+          description: 'Ordered list of 3 to 5 ritual ids to feature during the prep window, most important first.',
         },
         insight: {
           type: 'string',
-          description: 'A short (2-3 sentence) human-readable explanation of why this plan fits the event.',
+          description: 'A single short sentence (roughly 15-20 words, similar length to "Complete your personalized voice exercises and daily check-in to build healthier vocal habits and track your progress.") explaining why this plan fits the event. One sentence only — no more.',
         },
       },
       required: ['ritualIds', 'insight'],
@@ -83,7 +90,7 @@ function getMockResponse(history: { role: 'user' | 'assistant'; content: string 
   }
 
   const ritualIdList = getRitualIdList();
-  const ritualIds = ritualIdList.slice(0, Math.min(3, ritualIdList.length));
+  const ritualIds = ritualIdList.slice(0, Math.min(PREP_MIN_RITUAL_COUNT, ritualIdList.length));
   return {
     type: 'plan' as const,
     ritualIds,
@@ -130,10 +137,11 @@ interface SelectRitualsRequestBody {
   hasTimeBarrier: boolean;
   hasPhysicalDemandsBarrier: boolean;
   preferredDifficulties: string[];
+  preferredEventRitualIds: string[];
 }
 
 function buildRitualSelectionPrompt(body: SelectRitualsRequestBody): string {
-  const { profile, checkin, categorySequence, ritualCount, recentFeedback7d, worseRatedRitualIds, ritualLibrary, hasTimeBarrier, hasPhysicalDemandsBarrier, preferredDifficulties } = body;
+  const { profile, checkin, categorySequence, ritualCount, recentFeedback7d, worseRatedRitualIds, ritualLibrary, hasTimeBarrier, hasPhysicalDemandsBarrier, preferredDifficulties, preferredEventRitualIds } = body;
 
   const ritualList = ritualLibrary
     .map(r => `- ${r.id}: "${r.name}" (${r.category}, ${r.duration}, ${r.difficulty})`)
@@ -145,6 +153,8 @@ function buildRitualSelectionPrompt(body: SelectRitualsRequestBody): string {
 
   return `You are Vocalii's ritual selection engine. Select exactly ${ritualCount} ritual${ritualCount === 1 ? '' : 's'} for today's practice, one for each category slot below, in this exact order:
 ${categorySequence.map((c, i) => `${i + 1}. ${c}`).join('\n')}
+
+Voice & tone (applies to the "insight" field only — the selection itself follows the structured rules below): ${getAiTone()}
 
 User profile:
 - Role: ${profile.role ?? 'unspecified'}
@@ -172,6 +182,10 @@ Rituals rated "worse" in the last 14 days (avoid these unless no alternative exi
 
 Preferred difficulty for this user's experience level (soft preference, not a hard filter — use a candidate outside this list if it's the better fit for the category/body-scan-area/goal, or if no preferred-difficulty option exists in that slot): ${preferredDifficulties.join(', ')}
 
+${preferredEventRitualIds.length > 0
+  ? `This user is in prep mode for an upcoming event. Rituals from their event-prep plan (soft preference — use one of these for a slot when it's a good fit for that slot's category/body-scan-area/goal, but don't force a poor fit just to include one): ${preferredEventRitualIds.join(', ')}`
+  : ''}
+
 ${hasTimeBarrier ? 'This user has a time-consistency barrier — prefer shorter-duration rituals when candidates are otherwise close.' : ''}
 ${hasPhysicalDemandsBarrier ? "This user has a physical-demands barrier — their body carries more day-to-day strain, so favor gentler execution and lean toward the 'Beginner' end of the preferred-difficulty range even if their experience level would normally suggest more." : ''}
 
@@ -183,6 +197,7 @@ Rules:
 - Within each slot, pick the ritual that best matches the body scan area and primary goal.
 - Prefer rituals matching the preferred difficulty level above, unless a better-fitting option exists outside it.
 - Avoid rituals rated "worse" in the last 14 days unless no alternative exists in that category slot.
+- If the user is in event-prep mode, lean toward a ritual from their event-prep plan for a slot when it fits well — but never at the cost of a clearly better body-scan-area/goal match, and never overriding the difficulty or "worse"-rated rules above.
 - Prefer shorter duration rituals if the user has a time barrier.
 - Add variety — avoid repeating the same ritual across slots if alternatives exist.
 - Also write a short (1 sentence) "insight" explaining today's routine directly to the user — warm and conversational, referencing their actual check-in (how their voice/body is feeling, what they scanned as needing support) and how the routine addresses it. Do not mention category names, ritual ids, or any of the internal rules above.
@@ -225,7 +240,9 @@ interface WeeklyInsightRequestBody {
 }
 
 function buildWeeklyInsightPrompt(body: WeeklyInsightRequestBody): string {
-  return `You are Vocalii's weekly voice report narrator. Write a short, warm, three-part insight summarizing this user's week, based only on the data below — do not invent details.
+  return `You are Vocalii's weekly voice report narrator. Write a short, three-part insight summarizing this user's week, based only on the data below — do not invent details.
+
+Voice & tone: ${getAiTone()}
 
 Weekly stats:
 - Checked in ${body.checkedInDays} out of 7 days
@@ -284,6 +301,8 @@ interface VoiceReportInsightRequestBody {
 
 function buildVoiceReportInsightPrompt(body: VoiceReportInsightRequestBody): string {
   return `You are Vocalii's voice analysis narrator. A user just recorded a short sample and these acoustic metrics were measured from real signal analysis of their voice:
+
+Voice & tone: ${getAiTone()}
 
 - Pitch: ${body.pitchHz.toFixed(0)} Hz
 - Pitch range: ${body.pitchRangeHz.toFixed(0)} Hz
@@ -346,6 +365,8 @@ function buildEscalationInsightPrompt(body: EscalationInsightRequestBody): strin
 
   return `You are Vocalii's safety narrator. A user's daily check-in triggered the app's safety pause — no vocal rituals were assigned today, and no AI ritual-selection call was made.
 
+Voice & tone (this must never soften or override the safety instructions below — always recommend professional guidance): ${getAiTone()}
+
 ${reasonContext}
 Their stated focus area today was: ${body.supportArea || 'not specified'}.
 
@@ -365,6 +386,8 @@ function buildSystemPrompt(event: { title: string; date: string; location?: stri
 
   return `You are Vocalii's voice-prep coach. A user is preparing for an upcoming event and you need to understand it well enough to select a tailored set of daily vocal rituals for them to practice in the days leading up to it.
 
+Voice & tone: ${getAiTone()}
+
 Event: "${event.title}" on ${event.date}${event.location ? ` at ${event.location}` : ''}.
 
 Available rituals (choose only from this pool, referencing them by id):
@@ -374,7 +397,7 @@ Ask at most 3-4 short, targeted questions — one at a time — about things lik
 
 Once you have enough understanding, do NOT call the tool yet. First send a short plain-text message that summarizes what you learned about the event in 1-2 sentences and explicitly asks the user to reply "confirm" or "yes" before you generate their plan. This message must start with the exact token [CONFIRM_REQUIRED] followed by a space, then your summary — never use this token at any other time. Wait for their reply.
 
-Only after the user has explicitly confirmed (a message containing something like "yes" or "confirm") should you call the commit_ritual_plan tool with an ordered list of ritual ids and a short insight explaining the choice. If the user's reply doesn't clearly confirm, ask again or clarify — do not call the tool.`;
+Only after the user has explicitly confirmed (a message containing something like "yes" or "confirm") should you call the commit_ritual_plan tool with an ordered list of 3 to 5 ritual ids — never fewer than 3, never more than 5 — and a short insight explaining the choice. If the user's reply doesn't clearly confirm, ask again or clarify — do not call the tool.`;
 }
 
 // The Express app + all /api routes are registered at module scope (not inside startServer)
@@ -393,6 +416,10 @@ function fallbackRitualSelection(body: SelectRitualsRequestBody): string[] {
       const candidates = EXERCISE_RITUALS.filter(r => r.category === category);
       const untainted = candidates.filter(r => !body.worseRatedRitualIds.includes(r.id));
       const pool = untainted.length > 0 ? untainted : candidates;
+      // Event-prep bias: prefer a ritual from the original prep plan if one exists in this
+      // slot's pool and isn't rated "worse" — same slot, different day, still nudged toward plan.
+      const eventMatched = pool.filter(r => body.preferredEventRitualIds.includes(r.id));
+      if (eventMatched.length > 0) return eventMatched[0].id;
       const difficultyMatched = pool.filter(r => body.preferredDifficulties.includes(r.difficulty));
       return (difficultyMatched.length > 0 ? difficultyMatched : pool)[0]?.id;
     })
@@ -434,7 +461,16 @@ app.post('/api/event-chat', async (req, res) => {
     if (toolUse) {
       const input = toolUse.input as { ritualIds: string[]; insight: string };
       const ritualIdList = getRitualIdList();
-      const validIds = input.ritualIds.filter(id => ritualIdList.includes(id));
+      let validIds = input.ritualIds.filter(id => ritualIdList.includes(id));
+      // Safety clamp — the tool schema already constrains this to 3-5, but this guards against a
+      // model deviating anyway (or every id it named turning out invalid), so prep mode's daily
+      // count always stays in bounds the same way the regular routine's does.
+      if (validIds.length > PREP_MAX_RITUAL_COUNT) {
+        validIds = validIds.slice(0, PREP_MAX_RITUAL_COUNT);
+      } else if (validIds.length < PREP_MIN_RITUAL_COUNT) {
+        const fillers = ritualIdList.filter(id => !validIds.includes(id));
+        validIds = [...validIds, ...fillers.slice(0, PREP_MIN_RITUAL_COUNT - validIds.length)];
+      }
       res.json({ type: 'plan', ritualIds: validIds, insight: input.insight });
       return;
     }
