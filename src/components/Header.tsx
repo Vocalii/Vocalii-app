@@ -121,7 +121,7 @@ export default function Header({
         
         {/* Left Side: Logo & Brand "SAFE ONE" - styled to align nicely */}
         <div className="flex items-center gap-2.5 z-10 flex-shrink-0 select-none pl-3">
-          <img src="/assets/images/logo-mark.png" alt="Vocalii" className="w-9 h-9 rounded-full flex-shrink-0 hover:opacity-90 transition-opacity duration-350" />
+          <img src="/assets/images/logo-mark.webp" alt="Vocalii" className="w-9 h-9 rounded-full flex-shrink-0 hover:opacity-90 transition-opacity duration-350" />
           <span className="text-xs font-normal tracking-[0.25em] text-white uppercase font-sans whitespace-nowrap opacity-80 ">
             Vocalii
           </span>

@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from './lib/supabase';
 import { postCheckInTrigger } from './lib/notificationTriggers';
-import OnboardingFlow from './components/onboarding/OnboardingFlow';
 import { OnboardingData } from './types/onboarding';
+import { type ProfileUpdates } from './components/ProfilePage';
 import Header, { AppNotification } from './components/Header';
 import HeroSection from './components/HeroSection';
 import WeatherWidget from './components/WeatherWidget';
@@ -12,18 +12,34 @@ import BusyWidget from './components/BusyWidget';
 import AcousticWidget from './components/AcousticWidget';
 import InteractiveMap from './components/VoiceHealthStatus';
 import HabitCard from './components/HabitCard';
-import DashboardConsistencyChart from './components/DashboardConsistencyChart';
 import RitualsPage, { type HabitCheckEntry } from './components/RitualsPage';
-import ReportsPage from './components/ReportsPage';
 import UpcomingEventsCard, { type VocalEvent } from './components/UpcomingEventsCard';
-import WeeklyReportPage from './components/WeeklyReportPage';
-import WeeklyCheckInPage from './components/WeeklyCheckInPage';
-import WeeklyReportSummary from './components/WeeklyReportSummary';
 import { selectRituals } from './lib/ritualSelection';
-import WeeklyReportLoadingScreen from './components/WeeklyReportLoadingScreen';
 import { getReflectionWeekStart, daysUntilWeeklyEligible } from './lib/weeklyCheckin';
-import ProfilePage, { type ProfileUpdates } from './components/ProfilePage';
 import { DESTINATIONS } from './data';
+
+// Lazy-loaded — not needed for the initial Home tab, and several of these pull in heavy
+// dependencies (jspdf on ReportsPage, recharts on the weekly-report/dashboard-chart components)
+// that shouldn't block first load for users who never open those tabs.
+const OnboardingFlow = lazy(() => import('./components/onboarding/OnboardingFlow'));
+const DashboardConsistencyChart = lazy(() => import('./components/DashboardConsistencyChart'));
+const ReportsPage = lazy(() => import('./components/ReportsPage'));
+const WeeklyReportPage = lazy(() => import('./components/WeeklyReportPage'));
+const WeeklyCheckInPage = lazy(() => import('./components/WeeklyCheckInPage'));
+const WeeklyReportSummary = lazy(() => import('./components/WeeklyReportSummary'));
+const WeeklyReportLoadingScreen = lazy(() => import('./components/WeeklyReportLoadingScreen'));
+const ProfilePage = lazy(() => import('./components/ProfilePage'));
+
+// Same spinner already used for the initial-auth loading state below, reused as the Suspense
+// fallback for lazy-loaded tabs/components so a lazy chunk load never looks visually different
+// from any other brief loading moment in the app.
+function LazyFallback() {
+  return (
+    <div className="min-h-[40vh] flex items-center justify-center">
+      <div className="w-6 h-6 border-2 border-[#17A9C9] border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 import { Destination, Attraction, Message, Ritual } from './types';
 import { VocalReport, Role, ExperienceLevel, Goal, VoiceBarrier, HabitPair } from './types/onboarding';
 import { type BaselineMetrics } from './components/BaselineFlow';
@@ -900,12 +916,14 @@ export default function App() {
 
   if (!onboardingDone) {
     return (
-      <OnboardingFlow
-        onComplete={handleOnboardingComplete}
-        onBypass={handleBypass}
-        skipAuth={!!userId}
-        initialData={pendingProfile ?? undefined}
-      />
+      <Suspense fallback={<div className="min-h-screen bg-[#0d0e11]" />}>
+        <OnboardingFlow
+          onComplete={handleOnboardingComplete}
+          onBypass={handleBypass}
+          skipAuth={!!userId}
+          initialData={pendingProfile ?? undefined}
+        />
+      </Suspense>
     );
   }
 
@@ -965,58 +983,66 @@ export default function App() {
       />
 
       {currentView === 'weekly-report' && (
-        <WeeklyReportPage
-          onBack={() => setCurrentView('home')}
-          habitPairs={userHabits}
-          habitCompletions={habitCompletions}
-          userId={userId}
-          goal={goals[0] ?? null}
-          dailyRitualIds={dailyRitualIds}
-          onResetWeeklyCheckIn={async () => {
-            await handleResetWeeklyCheckIn();
-            setCurrentView('weekly-checkin');
-          }}
-        />
+        <Suspense fallback={<LazyFallback />}>
+          <WeeklyReportPage
+            onBack={() => setCurrentView('home')}
+            habitPairs={userHabits}
+            habitCompletions={habitCompletions}
+            userId={userId}
+            goal={goals[0] ?? null}
+            dailyRitualIds={dailyRitualIds}
+            onResetWeeklyCheckIn={async () => {
+              await handleResetWeeklyCheckIn();
+              setCurrentView('weekly-checkin');
+            }}
+          />
+        </Suspense>
       )}
 
       {currentView === 'weekly-checkin' && (
-        <WeeklyCheckInPage
-          onBack={() => setCurrentView('home')}
-          userId={userId}
-          goal={goals[0] ?? null}
-          trait={desiredVoiceTraits[0] ?? null}
-          weekStart={reflectionWeekStart}
-          onSubmitted={() => {
-            setWeeklyCheckinDue(false);
-            setCurrentView('weekly-report');
-            setShowWeeklyReportLoading(true);
-          }}
-        />
+        <Suspense fallback={<LazyFallback />}>
+          <WeeklyCheckInPage
+            onBack={() => setCurrentView('home')}
+            userId={userId}
+            goal={goals[0] ?? null}
+            trait={desiredVoiceTraits[0] ?? null}
+            weekStart={reflectionWeekStart}
+            onSubmitted={() => {
+              setWeeklyCheckinDue(false);
+              setCurrentView('weekly-report');
+              setShowWeeklyReportLoading(true);
+            }}
+          />
+        </Suspense>
       )}
 
       <AnimatePresence>
         {showWeeklyReportLoading && (
-          <WeeklyReportLoadingScreen onDone={() => setShowWeeklyReportLoading(false)} />
+          <Suspense fallback={null}>
+            <WeeklyReportLoadingScreen onDone={() => setShowWeeklyReportLoading(false)} />
+          </Suspense>
         )}
       </AnimatePresence>
 
       {currentView === 'profile' && (
-        <ProfilePage
-          onBack={() => setCurrentView('home')}
-          firstName={userName}
-          lastName={userLastName}
-          email={userEmail}
-          role={(userRole || null) as Role | null}
-          experienceLevel={experienceLevel}
-          desiredVoiceTraits={desiredVoiceTraits}
-          voiceStatement={voiceStatement}
-          goals={goals}
-          voiceBarrier={voiceBarrier}
-          habitPairs={userHabits}
-          onSave={handleUpdateProfile}
-          onChangePassword={handleChangePassword}
-          onDeleteAccount={handleDeleteAccount}
-        />
+        <Suspense fallback={<LazyFallback />}>
+          <ProfilePage
+            onBack={() => setCurrentView('home')}
+            firstName={userName}
+            lastName={userLastName}
+            email={userEmail}
+            role={(userRole || null) as Role | null}
+            experienceLevel={experienceLevel}
+            desiredVoiceTraits={desiredVoiceTraits}
+            voiceStatement={voiceStatement}
+            goals={goals}
+            voiceBarrier={voiceBarrier}
+            habitPairs={userHabits}
+            onSave={handleUpdateProfile}
+            onChangePassword={handleChangePassword}
+            onDeleteAccount={handleDeleteAccount}
+          />
+        </Suspense>
       )}
 
       <div className={`pt-[88px] max-w-7xl mx-auto transition-all duration-300 px-6 md:px-12 flex flex-col gap-6 ${currentView === 'weekly-report' || currentView === 'weekly-checkin' || currentView === 'profile' ? 'hidden' : ''}`}>
@@ -1039,23 +1065,25 @@ export default function App() {
             onAutoStartConsumed={() => setAutoStartRituals(false)}
           />
         ) : currentView === 'reports' ? (
-          <ReportsPage
-            reports={reports}
-            onAddReport={handleAddReport}
-            onDeleteReport={handleDeleteReport}
-            onRenameReport={handleRenameReport}
-            onToggleFavourite={handleToggleFavourite}
-            onSetBaseline={handleSetBaseline}
-            baseline={{
-              pitchHz: baselinePitchHz,
-              pitchRangeHz: baselinePitchRangeHz,
-              resonanceScore: baselineResonanceScore,
-              clarityPct: baselineClarityPct,
-              loudnessDb: baselineLoudnessDb,
-              stabilityPct: baselineStabilityPct,
-              setAt: baselineSetAt,
-            }}
-          />
+          <Suspense fallback={<LazyFallback />}>
+            <ReportsPage
+              reports={reports}
+              onAddReport={handleAddReport}
+              onDeleteReport={handleDeleteReport}
+              onRenameReport={handleRenameReport}
+              onToggleFavourite={handleToggleFavourite}
+              onSetBaseline={handleSetBaseline}
+              baseline={{
+                pitchHz: baselinePitchHz,
+                pitchRangeHz: baselinePitchRangeHz,
+                resonanceScore: baselineResonanceScore,
+                clarityPct: baselineClarityPct,
+                loudnessDb: baselineLoudnessDb,
+                stabilityPct: baselineStabilityPct,
+                setAt: baselineSetAt,
+              }}
+            />
+          </Suspense>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 font-sans">
 
@@ -1100,7 +1128,9 @@ export default function App() {
                     habitPairsCount={userHabits.length}
                   />
                 </div>
-                <DashboardConsistencyChart userId={userId} dailyRitualIds={dailyRitualIds} />
+                <Suspense fallback={<LazyFallback />}>
+                  <DashboardConsistencyChart userId={userId} dailyRitualIds={dailyRitualIds} />
+                </Suspense>
               </div>
             </div>
 
@@ -1156,7 +1186,9 @@ export default function App() {
                       </div>
                     ) : (
                       <div>
-                        <WeeklyReportSummary userId={userId} dailyRitualIds={dailyRitualIds} />
+                        <Suspense fallback={<LazyFallback />}>
+                          <WeeklyReportSummary userId={userId} dailyRitualIds={dailyRitualIds} />
+                        </Suspense>
                       </div>
                     )}
                     <div

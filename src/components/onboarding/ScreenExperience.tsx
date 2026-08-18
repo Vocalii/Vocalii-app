@@ -19,21 +19,21 @@ export const LEVELS: { id: ExperienceLevel; label: string; description: string; 
     label: 'New to Voice Care',
     description: "I have little or no experience with vocal exercises or voice training.",
     icon: <Sprout className="w-6 h-6" />,
-    image: '/assets/images/new.png',
+    image: '/assets/images/new.webp',
   },
   {
     id: 'some_experience',
     label: 'Some Voice Awareness',
     description: "I’ve tried voice exercises, read about voice care, or noticed patterns in my voice.",
     icon: <Flame className="w-6 h-6" />,
-    image: '/assets/images/medium.png',
+    image: '/assets/images/medium.webp',
   },
   {
     id: 'trained',
     label: "Experienced / Trained Voice User",
     description: "I’ve worked with an SLP, voice coach, singing teacher, or completed formal voice training.",
     icon: <Star className="w-6 h-6" />,
-    image: '/assets/images/expert.png',
+    image: '/assets/images/expert.webp',
   },
 ];
 

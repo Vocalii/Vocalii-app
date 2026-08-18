@@ -189,7 +189,7 @@ export default function GoalProgressCard({ userId, goal, dailyRitualIds, habitPa
 
           {result && style && (
             <motion.div
-              className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
               style={{ background: style.fill + '1a', border: `1px solid ${style.fill}40` }}
               animate={isHovering ? { y: [0, -1.5, 0], scale: 1.05 } : { y: 0, scale: 1 }}
               transition={isHovering
@@ -211,7 +211,7 @@ export default function GoalProgressCard({ userId, goal, dailyRitualIds, habitPa
           </div>
         ) : result && style ? (
           <div className="flex-1 flex flex-col justify-between z-10">
-            <h3 className="text-[16px] font-semibold tracking-tight leading-none font-sans -mt-3 mb-1" style={{ color: style.fill, filter: `drop-shadow(0 0 4px ${style.fill}60)` }}>
+            <h3 className="text-[16px] font-semibold tracking-tight leading-none font-sans -mt-2 pt-2" style={{ color: style.fill, filter: `drop-shadow(0 0 4px ${style.fill}60)` }}>
               {style.label}
             </h3>
             <p className="text-[10.5px] text-zinc-500 leading-relaxed">

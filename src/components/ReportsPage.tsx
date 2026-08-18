@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import BaselineFlow, { type BaselineMetrics } from './BaselineFlow';
+import { type BaselineMetrics } from './BaselineFlow';
 
 const FEELING_EMOJIS: Record<string, string> = {
   'Hoarseness': '🗣️', 'Dryness': '💧', 'Tension': '😬',
@@ -70,8 +70,6 @@ import {
   Star,
   Pencil,
   Check,
-  Target,
-  X,
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { VocalReport } from '../types/onboarding';
@@ -96,38 +94,6 @@ interface ReportsPageProps {
   baseline: ReportBaseline;
 }
 
-function BaselineModal({ onClose, onSave }: { onClose: () => void; onSave: (metrics: BaselineMetrics) => void }) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(10px)' }}
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 12 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 12 }}
-        transition={{ type: 'spring', stiffness: 340, damping: 28 }}
-        className="relative w-full max-w-sm rounded-[32px] overflow-hidden"
-        style={{
-          background: 'linear-gradient(160deg, #0f1319 0%, #0b0e14 100%)',
-          border: '1px solid rgba(167,139,250,0.2)',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.8), 0 0 60px rgba(124,58,237,0.07)',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-violet-400/40 to-transparent" />
-        <button onClick={onClose} className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center text-zinc-500 hover:text-white hover:bg-white/5 transition-all cursor-pointer z-10">
-          <X className="w-4 h-4" />
-        </button>
-        <BaselineFlow
-          onComplete={(metrics) => { onSave(metrics); onClose(); }}
-        />
-      </motion.div>
-    </div>
-  );
-}
-
 export default function ReportsPage({
   reports,
   onAddReport,
@@ -138,7 +104,6 @@ export default function ReportsPage({
   baseline,
 }: ReportsPageProps) {
   const [showAnalyzer, setShowAnalyzer] = useState(false);
-  const [showBaselinePicker, setShowBaselinePicker] = useState(false);
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
   const activeReportDetail = activeReportId ? reports.find(r => r.id === activeReportId) ?? null : null;
   const [sortBy, setSortBy] = useState<'recent' | 'alpha'>('recent');
@@ -673,97 +638,25 @@ export default function ReportsPage({
 
   return (
     <div className="w-full pb-10 select-none" id="reports-page-container">
-      <div className="mb-8 mt-6 flex flex-col md:flex-row md:items-start justify-between gap-6">
+      <div className="mb-4 mt-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-col gap-4">
           <div>
-            <h2 className="text-3xl font-light tracking-tight text-white mb-2">
+            <h2 className="text-white text-2xl md:text-3xl font-light tracking-wide font-display leading-none mb-4">
               Analyze Your Voice
             </h2>
-            <p className="text-sm text-zinc-400 max-w-xl leading-relaxed">
+            <p className="text-sm font-medium text-zinc-400 leading-snug max-w-md mt-1.5">
               Measure vocal performance, monitor fatigue and recovery, and gain actionable insights to keep your voice performing at its best.
             </p>
-          </div>
-
-          {/* Sort + multi-select row */}
-          <div className="flex items-center gap-2 self-start">
-            <div className="relative">
-              <button
-                onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
-                className="flex items-center gap-2.5 px-4 py-2.5 bg-[#181b22] hover:bg-[#1d212a] border border-zinc-800/80 hover:border-[#17A9C9]/35 rounded-xl text-zinc-300 hover:text-white text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-[#21e8ff]" />
-                <span>Sort: <strong className="font-semibold text-white">{sortBy === 'recent' ? 'Most Recent' : 'Alphabetical'}</strong></span>
-                <ChevronDown className={`w-3 h-3 transition-transform duration-300 text-zinc-500 ${isSortDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {isSortDropdownOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setIsSortDropdownOpen(false)} />
-                  <div className="absolute left-0 mt-2 w-48 bg-[#12141a] border border-zinc-800/80 rounded-xl shadow-[0_10px_25px_rgba(0,0,0,0.5)] py-1.5 z-50">
-                    {(['recent', 'alpha'] as const).map((opt) => (
-                      <button
-                        key={opt}
-                        onClick={() => { setSortBy(opt); setIsSortDropdownOpen(false); }}
-                        className={`w-full flex items-center justify-between px-4 py-2.5 text-xs text-left cursor-pointer transition-colors ${sortBy === opt ? 'text-[#21e8ff] bg-[#17A9C9]/10 font-semibold' : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'}`}
-                      >
-                        <span>{opt === 'recent' ? 'Most Recent' : 'Alphabetical'}</span>
-                        {sortBy === opt && <span className="w-1.5 h-1.5 rounded-full bg-[#21e8ff]" />}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            <button
-              onClick={() => setShowFavouritesOnly(v => !v)}
-              className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none ${showFavouritesOnly
-                ? 'bg-[#17A9C9]/15 border-[#17A9C9]/45 text-[#21e8ff]'
-                : 'bg-[#181b22] hover:bg-[#1d212a] border-zinc-800/80 hover:border-[#17A9C9]/35 text-zinc-300 hover:text-white'
-                }`}
-            >
-              <Star className="w-3.5 h-3.5" />
-              <span>Favourites</span>
-            </button>
           </div>
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-start gap-5 flex-shrink-0 mt-4">
-
-          {/* Set Baseline */}
-          <button
-            onClick={() => setShowBaselinePicker(true)}
-            className="group/sb relative flex flex-col items-center gap-3 cursor-pointer"
-          >
-            <div
-              className="relative w-[92px] h-[92px] rounded-full flex items-center justify-center transition-all duration-300 group-hover/sb:scale-105"
-              style={{
-                background: 'radial-gradient(circle at 38% 32%, rgba(167,139,250,0.18) 0%, rgba(124,58,237,0.06) 55%, rgba(12,14,18,0.9) 100%)',
-                border: '1.5px solid rgba(167,139,250,0.35)',
-                boxShadow: '0 0 28px rgba(167,139,250,0.12), inset 0 0 20px rgba(167,139,250,0.05)',
-              }}
-            >
-              <div
-                className="absolute inset-0 rounded-full animate-ping opacity-15"
-                style={{ border: '1px solid rgba(167,139,250,0.5)', animationDuration: '3s' }}
-              />
-              <Target className="w-7 h-7 text-violet-400 group-hover/sb:scale-110 transition-transform duration-300" style={{ filter: 'drop-shadow(0 0 8px rgba(167,139,250,0.5))' }} />
-            </div>
-            <div className="flex flex-col items-center gap-1">
-              <span className="text-[13px] font-light text-violet-400 tracking-wide">Set Baseline</span>
-              <span className="text-[9px] font-mono text-zinc-600">
-                {baseline.setAt
-                  ? `Last set ${new Date(baseline.setAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                  : 'Never set'}
-              </span>
-            </div>
-          </button>
+        <div className="flex items-center gap-5 flex-shrink-0">
 
           {/* Voice Analyzer circle button */}
           <button
             onClick={() => setShowAnalyzer(true)}
-            className="group/va relative flex flex-col items-center gap-3 cursor-pointer"
+            className="group/va relative flex flex-col items-center gap-2 cursor-pointer"
           >
             <div
               className="relative w-[92px] h-[92px] rounded-full flex items-center justify-center transition-all duration-300 group-hover/va:scale-105"
@@ -780,30 +673,72 @@ export default function ReportsPage({
               <Mic className="w-7 h-7 text-[#21e8ff] group-hover/va:scale-110 transition-transform duration-300" style={{ filter: 'drop-shadow(0 0 8px rgba(33,232,255,0.6))' }} />
             </div>
             <div className="flex flex-col items-center gap-1">
-              <span className="text-[13px] font-light text-[#21e8ff] tracking-wide">Record Analysis</span>
+              <span className="text-[13px] font-medium text-[#21e8ff] tracking-wide">Record Analysis</span>
             </div>
           </button>
 
         </div>{/* end action buttons */}
       </div>
 
-      {/* Baseline recording modal */}
-      {showBaselinePicker && <BaselineModal onClose={() => setShowBaselinePicker(false)} onSave={onSetBaseline} />}
-
       <div className="border-b border-zinc-900/40 mb-6" />
 
-      <div className="relative mb-4 flex items-center">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          placeholder="Search reports..."
-          className="w-full py-2.5 pl-4 pr-10 rounded-2xl bg-[#13151c]/70 border border-zinc-800 focus:border-[#17A9C9]/50 focus:outline-none text-xs text-white"
-        />
-        <div className="absolute right-3.5 flex items-center pointer-events-none text-zinc-500">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+      <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
+        <div className="relative flex items-center w-full max-w-xs">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search reports..."
+            className="w-full py-2.5 pl-4 pr-10 rounded-2xl bg-[#13151c]/70 border border-zinc-800 focus:border-[#17A9C9]/50 focus:outline-none text-xs text-white"
+          />
+          <div className="absolute right-3.5 flex items-center pointer-events-none text-zinc-500">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Sort + multi-select row */}
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
+              className="flex items-center gap-2.5 px-4 py-2.5 bg-[#181b22] hover:bg-[#1d212a] border border-zinc-800/80 hover:border-[#17A9C9]/35 rounded-xl text-zinc-300 hover:text-white text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-[#21e8ff]" />
+              <span>Sort: <strong className="font-semibold text-white">{sortBy === 'recent' ? 'Most Recent' : 'Alphabetical'}</strong></span>
+              <ChevronDown className={`w-3 h-3 transition-transform duration-300 text-zinc-500 ${isSortDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isSortDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsSortDropdownOpen(false)} />
+                <div className="absolute right-0 mt-2 w-48 bg-[#12141a] border border-zinc-800/80 rounded-xl shadow-[0_10px_25px_rgba(0,0,0,0.5)] py-1.5 z-50">
+                  {(['recent', 'alpha'] as const).map((opt) => (
+                    <button
+                      key={opt}
+                      onClick={() => { setSortBy(opt); setIsSortDropdownOpen(false); }}
+                      className={`w-full flex items-center justify-between px-4 py-2.5 text-xs text-left cursor-pointer transition-colors ${sortBy === opt ? 'text-[#21e8ff] bg-[#17A9C9]/10 font-semibold' : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'}`}
+                    >
+                      <span>{opt === 'recent' ? 'Most Recent' : 'Alphabetical'}</span>
+                      {sortBy === opt && <span className="w-1.5 h-1.5 rounded-full bg-[#21e8ff]" />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <button
+            onClick={() => setShowFavouritesOnly(v => !v)}
+            className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none ${showFavouritesOnly
+              ? 'bg-[#17A9C9]/15 border-[#17A9C9]/45 text-[#21e8ff]'
+              : 'bg-[#181b22] hover:bg-[#1d212a] border-zinc-800/80 hover:border-[#17A9C9]/35 text-zinc-300 hover:text-white'
+              }`}
+          >
+            <Star className="w-3.5 h-3.5" />
+            <span>Favourites</span>
+          </button>
         </div>
       </div>
 
