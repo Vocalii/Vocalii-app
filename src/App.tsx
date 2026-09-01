@@ -14,6 +14,8 @@ import InteractiveMap from './components/VoiceHealthStatus';
 import HabitCard from './components/HabitCard';
 import RitualsPage, { type HabitCheckEntry } from './components/RitualsPage';
 import UpcomingEventsCard, { type VocalEvent } from './components/UpcomingEventsCard';
+import GettingStartedCard from './components/GettingStartedCard';
+import TutorialVideoOverlay from './components/TutorialVideoOverlay';
 import { selectRituals } from './lib/ritualSelection';
 import { getReflectionWeekStart, daysUntilWeeklyEligible } from './lib/weeklyCheckin';
 import { DESTINATIONS } from './data';
@@ -22,6 +24,7 @@ import { DESTINATIONS } from './data';
 // dependencies (jspdf on ReportsPage, recharts on the weekly-report/dashboard-chart components)
 // that shouldn't block first load for users who never open those tabs.
 const OnboardingFlow = lazy(() => import('./components/onboarding/OnboardingFlow'));
+const LandingPage = lazy(() => import('./components/landing/LandingPage'));
 const DashboardConsistencyChart = lazy(() => import('./components/DashboardConsistencyChart'));
 const ReportsPage = lazy(() => import('./components/ReportsPage'));
 const WeeklyReportPage = lazy(() => import('./components/WeeklyReportPage'));
@@ -158,6 +161,12 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [onboardingDone, setOnboardingDone] = useState(false);
+  // Whether a logged-out visitor has clicked through the landing page into auth/onboarding.
+  const [showAuth, setShowAuth] = useState(false);
+  // Manual "back to landing" override from the auth screen — wins even over an existing userId
+  // session mid-onboarding, so the back button is a real navigation, not just a flag skipAuth
+  // can override right back.
+  const [forceLanding, setForceLanding] = useState(false);
   // Pre-filled name for users who signed up but haven't finished onboarding
   const [pendingProfile, setPendingProfile] = useState<{ firstName: string; lastName: string } | null>(null);
 
@@ -197,6 +206,46 @@ export default function App() {
   const [baselinePitchHz, setBaselinePitchHz] = useState<number | null>(null);
   const [baselinePitchRangeHz, setBaselinePitchRangeHz] = useState<number | null>(null);
   const [baselineSetAt, setBaselineSetAt] = useState<string | null>(null);
+
+  // ─── Getting-started checklist (post-onboarding tutorial widget) ───────────
+  // Each step flag is write-once — set true the moment that action first happens (see the three
+  // handlers below) and never unset, so no extra existence-check query is needed against
+  // daily_checkins/ritual_completions/vocal_reports.
+  const [tutorialCheckinDone, setTutorialCheckinDone] = useState(false);
+  const [tutorialRitualDone, setTutorialRitualDone] = useState(false);
+  const [tutorialAnalyzerDone, setTutorialAnalyzerDone] = useState(false);
+  // Whether the 3-video walkthrough sequence has ever been shown/dismissed — separate from the
+  // per-step done flags above.
+  const [tutorialVideosSeen, setTutorialVideosSeen] = useState(false);
+  // Controls TutorialVideoOverlay.tsx — null means hidden. `sequence: true` is the automatic
+  // first-time walkthrough (advances through all 3); `sequence: false` is a single-video replay
+  // triggered from a GettingStartedCard row's info icon.
+  const [videoOverlay, setVideoOverlay] = useState<{ startIndex: number; sequence: boolean } | null>(null);
+
+  // Flips one tutorial step flag true (state + persisted) — a no-op if it's already true, since
+  // these are write-once and never unset.
+  const markTutorialStepDone = (
+    done: boolean,
+    setDone: (v: boolean) => void,
+    column: 'tutorial_checkin_done' | 'tutorial_ritual_done' | 'tutorial_analyzer_done',
+  ) => {
+    if (done || !userId) return;
+    setDone(true);
+    const update = column === 'tutorial_checkin_done' ? { tutorial_checkin_done: true }
+      : column === 'tutorial_ritual_done' ? { tutorial_ritual_done: true }
+      : { tutorial_analyzer_done: true };
+    supabase.from('profiles').update(update).eq('id', userId);
+  };
+
+  // Closing the automatic sequence (even by skipping partway through) marks it seen so it never
+  // auto-shows again — standard tour UX. A single-video replay never touches this flag.
+  const handleCloseTutorialVideos = () => {
+    if (videoOverlay?.sequence && !tutorialVideosSeen) {
+      setTutorialVideosSeen(true);
+      if (userId) supabase.from('profiles').update({ tutorial_videos_seen: true }).eq('id', userId);
+    }
+    setVideoOverlay(null);
+  };
 
   // ─── Notifications (ephemeral, kept in localStorage) ───────────────────────
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
@@ -279,6 +328,12 @@ export default function App() {
       setBaselinePitchHz(profile.baseline_pitch_hz ?? null);
       setBaselinePitchRangeHz(profile.baseline_pitch_range_hz ?? null);
       setBaselineSetAt(profile.baseline_set_at ?? null);
+      setTutorialCheckinDone(profile.tutorial_checkin_done ?? false);
+      setTutorialRitualDone(profile.tutorial_ritual_done ?? false);
+      setTutorialAnalyzerDone(profile.tutorial_analyzer_done ?? false);
+      const videosSeen = profile.tutorial_videos_seen ?? false;
+      setTutorialVideosSeen(videosSeen);
+      if (!videosSeen) setVideoOverlay({ startIndex: 0, sequence: true });
       setUserHabits(habits?.map(h => ({ daily: h.daily_habit, vocal: h.vocal_habit })) ?? []);
       if (checkin) {
         setCheckInDone(true);
@@ -406,17 +461,14 @@ export default function App() {
     }
   };
 
-  // ─── Quick preview bypass (no account required) ─────────────────────────────
-  const handleBypass = () => {
-    setOnboardingDone(true);
-  };
-
   // ─── Onboarding complete ────────────────────────────────────────────────────
   const handleOnboardingComplete = async (data: OnboardingData) => {
     const { data: { session } } = await supabase.auth.getSession();
 
     if (!session) {
-      // Quick-preview bypass — no persistence, just show the app
+      // Defensive fallback — shouldn't normally happen since AuthScreen requires a successful
+      // signUp before onboarding can proceed, but guards against e.g. a session that failed to
+      // establish. Shows the app unpersisted rather than leaving the user stuck.
       setUserName(data.firstName);
       setUserLastName(data.lastName);
       setUserRole(data.role || '');
@@ -576,6 +628,7 @@ export default function App() {
     if (row) {
       setReports(prev => [mapReport(row), ...prev]);
       addNotification('Voice analysis report saved');
+      markTutorialStepDone(tutorialAnalyzerDone, setTutorialAnalyzerDone, 'tutorial_analyzer_done');
     }
   };
 
@@ -695,6 +748,7 @@ export default function App() {
       ]);
     }
     addNotification('Daily check-in complete', postCheckInTrigger(userId ?? 'preview', roundedEffort, symptoms).body);
+    markTutorialStepDone(tutorialCheckinDone, setTutorialCheckinDone, 'tutorial_checkin_done');
 
     setRitualsLoading(true);
     // Enforce a minimum visible loading time so the "AI is building your routine" animation
@@ -777,6 +831,7 @@ export default function App() {
     }
 
     setCompletedRitualIds(prev => [...prev, ritualId]);
+    markTutorialStepDone(tutorialRitualDone, setTutorialRitualDone, 'tutorial_ritual_done');
   };
 
   const handleRestartRoutine = async () => {
@@ -915,11 +970,26 @@ export default function App() {
   }
 
   if (!onboardingDone) {
+    // Anyone with no session yet sees the marketing landing page first, not AuthScreen directly —
+    // until they click through. `forceLanding` is a manual override from the auth screen's back
+    // button: it always wins, even for a userId session mid-onboarding, so "back" is a real
+    // navigation rather than something skipAuth can silently cancel out.
+    if (forceLanding || (!userId && !showAuth)) {
+      return (
+        <Suspense fallback={<div className="min-h-screen bg-[#090b0e]" />}>
+          <LandingPage
+            onGetStarted={() => { setForceLanding(false); setShowAuth(true); }}
+            onSignIn={() => { setForceLanding(false); setShowAuth(true); }}
+          />
+        </Suspense>
+      );
+    }
+
     return (
       <Suspense fallback={<div className="min-h-screen bg-[#0d0e11]" />}>
         <OnboardingFlow
           onComplete={handleOnboardingComplete}
-          onBypass={handleBypass}
+          onExitAuth={() => setForceLanding(true)}
           skipAuth={!!userId}
           initialData={pendingProfile ?? undefined}
         />
@@ -1209,12 +1279,29 @@ export default function App() {
                 onUpdateEvent={handleUpdateEvent}
                 onDeleteEvent={handleDeleteEvent}
               />
+
+              {!(tutorialCheckinDone && tutorialRitualDone && tutorialAnalyzerDone) && (
+                <GettingStartedCard
+                  checkinDone={tutorialCheckinDone}
+                  ritualDone={tutorialRitualDone}
+                  analyzerDone={tutorialAnalyzerDone}
+                  onReplayStep={(i) => setVideoOverlay({ startIndex: i, sequence: false })}
+                />
+              )}
             </div>
           </div>
         )}
       </div>
 
       {/* ── Modals ── */}
+
+      {videoOverlay && (
+        <TutorialVideoOverlay
+          startIndex={videoOverlay.startIndex}
+          sequence={videoOverlay.sequence}
+          onClose={handleCloseTutorialVideos}
+        />
+      )}
 
       {infoModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">

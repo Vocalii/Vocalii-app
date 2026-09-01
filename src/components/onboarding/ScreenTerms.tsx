@@ -22,7 +22,7 @@ export default function ScreenTerms({ onNext, onBack }: Props) {
           <OnboardingLogo />
         </div>
 
-        <h1 className="text-2xl font-bold font-display tracking-tight text-white mb-1">
+        <h1 className="text-2xl font-light font-display tracking-tight text-white mb-1">
           Terms & Conditions
         </h1>
         <p className="text-xs text-zinc-500 leading-normal mb-6">
@@ -30,8 +30,8 @@ export default function ScreenTerms({ onNext, onBack }: Props) {
         </p>
 
         <div
-          className="max-h-56 overflow-y-auto rounded-2xl px-4 py-4 text-[11.5px] leading-relaxed text-zinc-400 mb-6"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+          className="max-h-56 overflow-y-auto rounded-2xl px-4 py-4 text-[11.5px] leading-relaxed text-[#8fc9d6] mb-6 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-[#17A9C9]/40 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:h-6"
+          style={{ background: 'rgba(23,169,201,0.06)', border: '1px solid rgba(23,169,201,0.2)' }}
         >
           <p className="mb-3">
             By using Vocalii, you agree to our Terms of Service and Privacy Policy. Vocalii provides
@@ -53,12 +53,10 @@ export default function ScreenTerms({ onNext, onBack }: Props) {
           className="flex items-center gap-3 mb-8 text-left cursor-pointer select-none"
         >
           <span
-            className="flex-shrink-0 flex items-center justify-center w-5 h-5 rounded-md border transition-all duration-200"
-            style={accepted
-              ? { background: 'linear-gradient(135deg, #21e8ff 0%, #17A9C9 100%)', borderColor: 'transparent' }
-              : { borderColor: 'rgba(63,63,70,0.8)' }}
+            className="flex-shrink-0 flex items-center justify-center w-5 h-5 rounded-md transition-all duration-200"
+            style={{ background: 'transparent', border: `1.5px solid ${accepted ? 'rgba(14,116,144,0.95)' : 'rgba(255,255,255,0.2)'}` }}
           >
-            {accepted && <Check className="w-3 h-3 text-[#090b0e]" strokeWidth={3} />}
+            {accepted && <Check className="w-3 h-3 text-[#0e7490]" strokeWidth={3} />}
           </span>
           <span className="text-xs text-zinc-300">
             I agree to the Terms of Service and Privacy Policy
@@ -77,8 +75,8 @@ export default function ScreenTerms({ onNext, onBack }: Props) {
             onClick={onNext}
             disabled={!accepted}
             className={`flex-1 flex items-center justify-center gap-1.5 h-12 rounded-xl transition-all duration-300 group ${accepted
-                ? 'bg-gradient-to-r from-[#17A9C9]/25 to-[#17A9C9]/10 hover:from-[#17A9C9]/35 hover:to-[#17A9C9]/15 border border-[#17A9C9]/60 hover:border-[#17A9C9]/80 shadow-[0_0_20px_rgba(23,169,201,0.12)] cursor-pointer'
-                : 'bg-zinc-900/40 border border-zinc-800/80 cursor-not-allowed opacity-80'
+              ? 'bg-gradient-to-r from-[#17A9C9]/25 to-[#17A9C9]/10 hover:from-[#17A9C9]/35 hover:to-[#17A9C9]/15 border border-[#17A9C9]/60 hover:border-[#17A9C9]/80 shadow-[0_0_20px_rgba(23,169,201,0.12)] cursor-pointer'
+              : 'bg-zinc-900/40 border border-zinc-800/80 cursor-not-allowed opacity-80'
               }`}
           >
             <span className={`text-[12px] tracking-widest uppercase font-medium transition-colors duration-300 ${accepted ? 'text-cyan-300 group-hover:text-[#21e8ff]' : 'text-zinc-600 font-light'

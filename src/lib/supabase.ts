@@ -25,6 +25,11 @@ export type Database = {
           baseline_pitch_hz: number | null;
           baseline_pitch_range_hz: number | null;
           baseline_set_at: string | null;
+          tutorial_checkin_done: boolean;
+          tutorial_ritual_done: boolean;
+          tutorial_analyzer_done: boolean;
+          tutorial_dismissed: boolean;
+          tutorial_videos_seen: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -49,6 +54,11 @@ export type Database = {
           baseline_pitch_hz?: number | null;
           baseline_pitch_range_hz?: number | null;
           baseline_set_at?: string | null;
+          tutorial_checkin_done?: boolean;
+          tutorial_ritual_done?: boolean;
+          tutorial_analyzer_done?: boolean;
+          tutorial_dismissed?: boolean;
+          tutorial_videos_seen?: boolean;
           updated_at?: string;
         };
         Update: {
@@ -71,6 +81,11 @@ export type Database = {
           baseline_pitch_hz?: number | null;
           baseline_pitch_range_hz?: number | null;
           baseline_set_at?: string | null;
+          tutorial_checkin_done?: boolean;
+          tutorial_ritual_done?: boolean;
+          tutorial_analyzer_done?: boolean;
+          tutorial_dismissed?: boolean;
+          tutorial_videos_seen?: boolean;
           updated_at?: string;
         };
         Relationships: [];

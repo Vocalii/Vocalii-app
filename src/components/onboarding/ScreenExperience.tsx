@@ -60,7 +60,7 @@ export default function ScreenExperience({ value, onChange, onNext, onBack, step
 
         {/* Heading */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold font-display text-white leading-tight tracking-tight mb-1">
+          <h1 className="text-2xl font-light font-display text-white leading-tight tracking-tight mb-1">
             Experience Level
           </h1>
           <p className="text-xs text-zinc-500">
@@ -129,7 +129,7 @@ export default function ScreenExperience({ value, onChange, onNext, onBack, step
       {/* RIGHT PANEL */}
       <div className="hidden lg:block lg:w-[32%] relative overflow-hidden">
         <img
-          src={LEVELS.filter(l => l.id === value)?.[0]?.image}
+          src={(LEVELS.find(l => l.id === value) ?? LEVELS[0]).image}
           alt="placeholder"
           className="absolute inset-0 w-full h-full object-cover"
         />

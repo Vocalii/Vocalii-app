@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
-  Info,
   Check,
   X,
   Eye,
@@ -29,10 +28,10 @@ const CAROUSEL_ITEMS = [
 
 interface Props {
   onSignUp: (firstName: string, lastName: string) => void;
-  onBypass: () => void;
+  onBack?: () => void;
 }
 
-export default function AuthScreen({ onSignUp, onBypass }: Props) {
+export default function AuthScreen({ onSignUp, onBack }: Props) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -108,21 +107,23 @@ export default function AuthScreen({ onSignUp, onBypass }: Props) {
       <div className="absolute top-[-10%] right-[-10%] w-[800px] h-[800px] rounded-full bg-[#17A9C9]/10 blur-[160px] pointer-events-none" />
       <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] rounded-full bg-violet-600/10 blur-[140px] pointer-events-none" />
 
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="absolute top-5 right-5 sm:top-7 sm:right-7 w-10 h-10 rounded-full flex items-center justify-center bg-zinc-900/60 border border-zinc-800/80 text-zinc-500 hover:text-white hover:border-zinc-600 transition-all duration-150 cursor-pointer z-20"
+          aria-label="Close and return to landing page"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      )}
+
       <div className="w-full max-w-6xl bg-[#111317] border border-zinc-900 rounded-[32px] shadow-[0_32px_96px_rgba(0,0,0,0.7)] overflow-hidden grid grid-cols-1 lg:grid-cols-12 relative min-h-[660px]">
 
         {/* LEFT PANEL */}
         <div className="lg:col-span-5 p-8 sm:p-12 lg:py-14 flex flex-col justify-between relative z-10">
 
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center mb-8">
             <OnboardingLogo />
-
-            <button
-              onClick={onBypass}
-              className="text-[10px] font-mono text-zinc-500 hover:text-[#21e8ff] transition-all flex items-center gap-1.5 bg-zinc-900/45 px-3 py-1.5 rounded-full border border-zinc-800/80 cursor-pointer hover:border-zinc-700"
-            >
-              <Info className="w-3.5 h-3.5 text-[#21e8ff]" />
-              <span>Quick Preview</span>
-            </button>
           </div>
 
           <div className="my-auto max-w-[340px] w-full mx-auto">

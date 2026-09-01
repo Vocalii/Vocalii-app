@@ -23,7 +23,7 @@ export default function OnboardingStepProgress({ step, totalSteps }: Props) {
           className="h-[5px] rounded-full"
         />
       ))}
-      <span className="text-[9px] font-mono text-zinc-600 ml-1">{step} of {totalSteps}</span>
+      <span className="text-[9px] font-medium text-zinc-600 ml-1">{step} of {totalSteps}</span>
     </div>
   );
 }

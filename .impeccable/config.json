@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "files": [
+          "src/index.css"
+        ],
+        "createdAt": "2026-08-31T22:26:35.802Z",
+        "reason": "pre-existing app-wide font choice set in index.css before this session; not part of this session's changes"
+      }
+    ]
+  }
+}

@@ -47,7 +47,7 @@ export default function ScreenRole({ value, onChange, onNext, onBack, step, tota
 
         {/* Heading */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold font-display text-white leading-tight tracking-tight mb-1">
+          <h1 className="text-2xl font-light font-display text-white leading-tight tracking-tight mb-1">
             Role
           </h1>
           <p className="text-xs text-zinc-500">
@@ -119,7 +119,7 @@ export default function ScreenRole({ value, onChange, onNext, onBack, step, tota
       {/* RIGHT PANEL */}
       <div className="hidden lg:block lg:w-[32%] relative overflow-hidden">
         <img
-          src={ROLES.filter(r => r.id === value)?.[0]?.image}
+          src={(ROLES.find(r => r.id === value) ?? ROLES[0]).image}
           alt="placeholder"
           className="absolute inset-0 w-full h-full object-cover"
         />

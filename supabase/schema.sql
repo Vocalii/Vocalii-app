@@ -18,9 +18,22 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   voice_identity       TEXT,
   baseline_set_at      TIMESTAMPTZ,
   onboarding_complete  BOOLEAN NOT NULL DEFAULT FALSE,
+  tutorial_checkin_done   BOOLEAN NOT NULL DEFAULT FALSE,
+  tutorial_ritual_done    BOOLEAN NOT NULL DEFAULT FALSE,
+  tutorial_analyzer_done  BOOLEAN NOT NULL DEFAULT FALSE,
+  tutorial_dismissed      BOOLEAN NOT NULL DEFAULT FALSE,
+  tutorial_videos_seen    BOOLEAN NOT NULL DEFAULT FALSE,
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Getting-started checklist flags (assumed by application code; formalized here)
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS tutorial_checkin_done BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS tutorial_ritual_done BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS tutorial_analyzer_done BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS tutorial_dismissed BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS tutorial_videos_seen BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- If this table already exists in your Supabase project, run this instead of the CREATE TABLE above:
 -- ALTER TABLE public.profiles

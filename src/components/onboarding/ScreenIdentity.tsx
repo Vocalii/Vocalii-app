@@ -93,7 +93,7 @@ export default function ScreenIdentity({ value, customIdentity, onChange, onCust
 
         {/* Heading */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold font-display text-white leading-tight tracking-tight mb-1">
+          <h1 className="text-2xl font-light font-display text-white leading-tight tracking-tight mb-1">
             Who do you want to become?
           </h1>
           <p className="text-xs text-zinc-500">
@@ -149,15 +149,13 @@ export default function ScreenIdentity({ value, customIdentity, onChange, onCust
           <button
             onClick={onNext}
             disabled={!canAdvance(value, customIdentity)}
-            className={`flex items-center justify-center gap-1.5 h-12 px-6 rounded-xl transition-all duration-300 group ${
-              canAdvance(value, customIdentity)
+            className={`flex items-center justify-center gap-1.5 h-12 px-6 rounded-xl transition-all duration-300 group ${canAdvance(value, customIdentity)
                 ? 'bg-gradient-to-r from-[#17A9C9]/25 to-[#17A9C9]/10 hover:from-[#17A9C9]/35 hover:to-[#17A9C9]/15 border border-[#17A9C9]/60 hover:border-[#17A9C9]/80 shadow-[0_0_20px_rgba(23,169,201,0.12)] cursor-pointer'
                 : 'bg-zinc-900/40 border border-zinc-800/80 cursor-not-allowed opacity-80'
-            }`}
+              }`}
           >
-            <span className={`text-[12px] tracking-widest uppercase font-medium transition-colors duration-300 ${
-              canAdvance(value, customIdentity) ? 'text-cyan-300 group-hover:text-[#21e8ff]' : 'text-zinc-600 font-light'
-            }`}>
+            <span className={`text-[12px] tracking-widest uppercase font-medium transition-colors duration-300 ${canAdvance(value, customIdentity) ? 'text-cyan-300 group-hover:text-[#21e8ff]' : 'text-zinc-600 font-light'
+              }`}>
               Continue
             </span>
             <ArrowRight className={`w-4 h-4 transition-colors duration-300 ${canAdvance(value, customIdentity) ? 'text-cyan-300 group-hover:text-[#21e8ff]' : 'text-zinc-700'}`} />

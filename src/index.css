@@ -17,6 +17,12 @@
   50% { transform: translateY(-4px); }
 }
 
+/* Matches the app's dark theme so any brief gap between animated screens (e.g. AnimatePresence's
+   mode="wait" exit/enter handoff) shows this instead of the browser's default white. */
+html, body {
+  background-color: #090b0e;
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 5px;

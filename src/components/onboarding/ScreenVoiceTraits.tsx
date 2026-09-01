@@ -77,7 +77,7 @@ export default function ScreenVoiceTraits({ desiredTraits, onChangeDesiredTraits
 
         {/* Heading */}
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold font-display text-white leading-tight tracking-tight mb-1">
+          <h1 className="text-2xl font-light font-display text-white leading-tight tracking-tight mb-1">
             How do you want to sound?
           </h1>
           <p className="text-xs text-zinc-500">
@@ -156,7 +156,7 @@ export default function ScreenVoiceTraits({ desiredTraits, onChangeDesiredTraits
               className="overflow-hidden"
             >
               <div className="mt-8 flex flex-col items-center gap-2">
-                <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+                <label className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">
                   (optional) I want my voice to:
                 </label>
                 <input
@@ -171,7 +171,7 @@ export default function ScreenVoiceTraits({ desiredTraits, onChangeDesiredTraits
                     border: `1px solid ${TRAIT_COLORS[selectedTrait].border.replace('0.6', '0.3')}`,
                   }}
                 />
-                <span className="text-[9px] font-mono text-zinc-600">
+                <span className="text-[9px] font-light text-zinc-600">
                   {voiceStatement.length}/{VOICE_STATEMENT_MAX_LENGTH}
                 </span>
               </div>

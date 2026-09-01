@@ -70,7 +70,7 @@ export default function ScreenGoals({ value, onChange, onNext, onBack, step, tot
 
         {/* Heading — centered */}
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold font-display text-white leading-tight tracking-tight mb-1">
+          <h1 className="text-2xl font-light font-display text-white leading-tight tracking-tight mb-1">
             What brings you here?
           </h1>
           <p className="text-xs text-zinc-500">
