@@ -1,5 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Analytics } from '@vercel/analytics/react';
 import { supabase } from './lib/supabase';
 import { postCheckInTrigger } from './lib/notificationTriggers';
 import { OnboardingData } from './types/onboarding';
@@ -711,7 +712,7 @@ export default function App() {
     setReports(prev => prev.map(r => r.id === id ? { ...r, favourite: newFav } : r));
   };
 
-  // ─── Daily check-in ─────────────────────────────────────────────────────────
+  // ─── Daily check-in ───────────────────────────────────────────��─────────────
   const handleCompleteCheckIn = async (vocalEffort: number, confidence: number, symptoms: string[], habitChecks: HabitCheckEntry[], demandLevel: number, notes: string, supportArea: string) => {
     const roundedEffort = Math.round(vocalEffort);
     const today = new Date().toISOString().slice(0, 10);
@@ -1375,6 +1376,7 @@ export default function App() {
         </div>
       )}
 
+      <Analytics />
     </div>
   );
 }
