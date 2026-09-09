@@ -57,15 +57,13 @@ export default function TutorialVideoOverlay({ startIndex, sequence, onClose }: 
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(14px)' }}
     >
-      {!sequence && (
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 sm:top-7 sm:right-7 w-10 h-10 rounded-full flex items-center justify-center bg-[#17A9C9]/10 border border-[#17A9C9]/40 text-[#21e8ff] hover:bg-[#17A9C9]/20 hover:border-[#17A9C9]/60 transition-all duration-150 cursor-pointer z-10"
-          aria-label="Close tutorial"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      )}
+      <button
+        onClick={onClose}
+        className="absolute top-5 right-5 sm:top-7 sm:right-7 w-10 h-10 rounded-full flex items-center justify-center bg-[#17A9C9]/10 border border-[#17A9C9]/40 text-[#21e8ff] hover:bg-[#17A9C9]/20 hover:border-[#17A9C9]/60 transition-all duration-150 cursor-pointer z-10"
+        aria-label="Close tutorial"
+      >
+        <X className="w-4 h-4" />
+      </button>
 
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 12 }}

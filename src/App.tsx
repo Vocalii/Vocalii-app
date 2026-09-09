@@ -337,7 +337,16 @@ export default function App() {
       setTutorialAnalyzerDone(profile.tutorial_analyzer_done ?? false);
       const videosSeen = profile.tutorial_videos_seen ?? false;
       setTutorialVideosSeen(videosSeen);
-      if (!videosSeen) setVideoOverlay({ startIndex: 0, sequence: true });
+      if (!videosSeen) {
+        setVideoOverlay({ startIndex: 0, sequence: true });
+        // Marked seen the moment the walkthrough opens, not just on close — otherwise a reload
+        // partway through (or just navigating away without clicking through to the end) would
+        // never persist it and the sequence would auto-open again on every future login.
+        setTutorialVideosSeen(true);
+        supabase.from('profiles').update({ tutorial_videos_seen: true }).eq('id', uid).then(({ error }) => {
+          if (error) console.error('Failed to persist tutorial_videos_seen:', error);
+        });
+      }
       setUserHabits(habits?.map(h => ({ daily: h.daily_habit, vocal: h.vocal_habit })) ?? []);
       if (checkin) {
         setCheckInDone(true);
@@ -549,6 +558,10 @@ export default function App() {
     setAccountCreatedAt(new Date().toISOString());
     setOnboardingDone(true);
     setVideoOverlay({ startIndex: 0, sequence: true });
+    setTutorialVideosSeen(true);
+    supabase.from('profiles').update({ tutorial_videos_seen: true }).eq('id', uid).then(({ error }) => {
+      if (error) console.error('Failed to persist tutorial_videos_seen:', error);
+    });
   };
 
   // ─── Profile edits ──────────────────────────────────────────────────────────

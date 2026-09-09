@@ -69,9 +69,9 @@ export default function HeroSection({
         <div className="absolute top-[-10%] left-[20%] w-[40%] h-[40%] bg-[#21e8ff]/[0.02] rounded-full blur-[90px] pointer-events-none" />
 
         {/* TOP PANEL: Title & Shooter tags */}
-        <div className="flex items-start justify-between z-20">
-          <div className="flex flex-col">
-            <h2 className="text-white text-xl md:text-2xl font-light tracking-wide font-display leading-none">
+        <div className="flex items-start justify-between gap-2 z-20">
+          <div className="flex flex-col min-w-0">
+            <h2 className="text-white text-lg sm:text-xl md:text-2xl font-light tracking-wide font-display leading-none truncate">
               Welcome back, {userName || 'there'}
             </h2>
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -122,8 +122,8 @@ export default function HeroSection({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="px-3.5 py-1.5 bg-zinc-900/60 text-[8px] sm:text-[10px] tracking-[0.2em] font-bold uppercase text-zinc-400 border border-zinc-800/80 rounded-full shadow-inner mt-0.5 whitespace-nowrap">
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-zinc-900/60 text-[7px] sm:text-[10px] tracking-[0.12em] sm:tracking-[0.2em] font-bold uppercase text-zinc-400 border border-zinc-800/80 rounded-full shadow-inner mt-0.5 whitespace-nowrap">
               {selectedTrait ? `${selectedTrait} ` : ''}{(userRole && ROLE_LABELS[userRole]) || 'Vocalist'}
             </span>
           </div>
