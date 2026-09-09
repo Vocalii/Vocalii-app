@@ -29,7 +29,7 @@ function CircleMetric({ value, unit, sub, label, accent, tooltip, delta }: { val
       <motion.div
         whileHover={{ scale: 1.07 }}
         transition={{ type: 'spring', stiffness: 350, damping: 20 }}
-        className="w-[118px] h-[118px] rounded-full flex flex-col items-center justify-center gap-0.5 cursor-default relative"
+        className="w-[92px] h-[92px] sm:w-[118px] sm:h-[118px] rounded-full flex flex-col items-center justify-center gap-0.5 cursor-default relative"
         style={{
           background: `radial-gradient(circle at 38% 32%, ${accent}22 0%, ${accent}08 100%)`,
           border: `1px solid ${accent}40`,
@@ -38,10 +38,10 @@ function CircleMetric({ value, unit, sub, label, accent, tooltip, delta }: { val
       >
         <div className="flex flex-col items-center gap-0.5 transition-opacity duration-150 group-hover:opacity-0">
           <div className="flex items-baseline gap-0.5 leading-none">
-            <span className="text-[22px] font-light tabular-nums" style={{ color: accent }}>{value}</span>
-            {unit && <span className="text-[11px] font-light" style={{ color: `${accent}90` }}>{unit}</span>}
+            <span className="text-[17px] sm:text-[22px] font-light tabular-nums" style={{ color: accent }}>{value}</span>
+            {unit && <span className="text-[9px] sm:text-[11px] font-light" style={{ color: `${accent}90` }}>{unit}</span>}
           </div>
-          {sub && <span className="text-[10px] font-mono mt-1" style={{ color: `${accent}60` }}>{sub}</span>}
+          {sub && <span className="text-[8px] sm:text-[10px] font-mono mt-1" style={{ color: `${accent}60` }}>{sub}</span>}
         </div>
         {tooltip && (
           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 px-4 pointer-events-none">
@@ -70,6 +70,7 @@ import {
   Star,
   Pencil,
   Check,
+  MoreVertical,
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { VocalReport } from '../types/onboarding';
@@ -110,6 +111,7 @@ export default function ReportsPage({
   const [searchQuery, setSearchQuery] = useState('');
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDetailMenuOpen, setIsDetailMenuOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
   const [hoveredStarId, setHoveredStarId] = useState<string | null>(null);
@@ -393,7 +395,7 @@ export default function ReportsPage({
         </div>
 
         <div className="flex items-start justify-between gap-4 mb-8">
-          <div>
+          <div className="max-w-[65%] sm:max-w-none">
             {isEditingName ? (
               <div className="flex items-center gap-2 mb-1.5">
                 <input
@@ -404,7 +406,7 @@ export default function ReportsPage({
                     if (e.key === 'Enter') { onRenameReport(activeReportDetail.id, editNameValue.trim() || activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(false); }
                     if (e.key === 'Escape') setIsEditingName(false);
                   }}
-                  className="text-[28px] font-extralight tracking-wide text-white bg-transparent border-b border-[#21e8ff]/50 focus:border-[#21e8ff] outline-none w-full"
+                  className="text-[19px] sm:text-[28px] font-extralight tracking-wide text-white bg-transparent border-b border-[#21e8ff]/50 focus:border-[#21e8ff] outline-none w-full"
                 />
                 <button
                   onClick={() => { onRenameReport(activeReportDetail.id, editNameValue.trim() || activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(false); }}
@@ -415,13 +417,13 @@ export default function ReportsPage({
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-2 mb-1.5">
-                <h1 className="text-[28px] font-extralight tracking-wide text-white">
+              <div className="flex items-start gap-2 mb-1.5">
+                <h1 className="text-[19px] sm:text-[28px] font-extralight tracking-wide text-white">
                   {activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`}
                 </h1>
                 <button
                   onClick={() => { setEditNameValue(activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(true); }}
-                  className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer opacity-40 hover:opacity-100 transition-opacity duration-200"
+                  className="hidden sm:flex w-7 h-7 rounded-full items-center justify-center flex-shrink-0 cursor-pointer opacity-40 hover:opacity-100 transition-opacity duration-200"
                   style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255, 255, 255, 0.25)' }}
                 >
                   <Pencil className="w-3 h-3 text-white-400" />
@@ -433,7 +435,7 @@ export default function ReportsPage({
             </p>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0 mt-1">
+          <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => exportToPDF(activeReportDetail)}
               title="Export PDF"
@@ -451,6 +453,47 @@ export default function ReportsPage({
             >
               <Trash2 className="w-4 h-4 text-rose-400" />
             </button>
+          </div>
+
+          {/* Mobile: single menu button collapsing edit/download/delete to save header space */}
+          <div className="relative sm:hidden flex-shrink-0">
+            <button
+              onClick={() => setIsDetailMenuOpen(o => !o)}
+              title="Report options"
+              className="w-11 h-11 rounded-full flex items-center justify-center cursor-pointer transition-all duration-200 hover:scale-105"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255, 255, 255, 0.25)' }}
+            >
+              <MoreVertical className="w-4 h-4 text-white/70" />
+            </button>
+
+            {isDetailMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsDetailMenuOpen(false)} />
+                <div className="absolute right-0 mt-2 w-44 bg-[#12141a] border border-zinc-800/80 rounded-xl shadow-[0_10px_25px_rgba(0,0,0,0.5)] py-1.5 z-50">
+                  <button
+                    onClick={() => { setIsDetailMenuOpen(false); setEditNameValue(activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(true); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs text-left text-zinc-300 hover:text-white hover:bg-zinc-800/50 transition-colors cursor-pointer"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-white/70" />
+                    Rename
+                  </button>
+                  <button
+                    onClick={() => { setIsDetailMenuOpen(false); exportToPDF(activeReportDetail); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs text-left text-zinc-300 hover:text-white hover:bg-zinc-800/50 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#21e8ff]" />
+                    Download PDF
+                  </button>
+                  <button
+                    onClick={() => { setIsDetailMenuOpen(false); setShowDeleteConfirm(true); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs text-left text-rose-400 hover:text-rose-300 hover:bg-zinc-800/50 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete report
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -504,7 +547,7 @@ export default function ReportsPage({
         {(activeReportDetail.pitchHz || activeReportDetail.resonanceScore !== undefined || activeReportDetail.clarityPct !== undefined
           || activeReportDetail.stabilityPct !== undefined || activeReportDetail.loudnessDb !== undefined) && (
             <>
-              <div className="flex flex-wrap justify-start gap-5 mb-8 py-2">
+              <div className="flex flex-wrap justify-center sm:justify-start gap-4 sm:gap-5 mb-8 py-2">
                 {activeReportDetail.pitchHz && (
                   <CircleMetric
                     value={`${Math.round(activeReportDetail.pitchHz)}`} unit="Hz"
@@ -572,8 +615,8 @@ export default function ReportsPage({
               {activeReportDetail.insight && (
                 <div className="relative flex flex-col gap-3 py-7 px-6 mb-8">
                   <div className="absolute inset-0 rounded-3xl pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(23,169,201,0.1) 0%, rgba(33,232,255,0.04) 55%, transparent 100%)' }} />
-                  <p className="text-[9px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.6)' }}>AI Insight</p>
-                  <p className="text-[14px] font-light text-zinc-200 leading-relaxed">{activeReportDetail.insight}</p>
+                  <p className="text-[9px] font-mono tracking-widest uppercase text-center sm:text-left" style={{ color: 'rgba(33,232,255,0.6)' }}>AI Insight</p>
+                  <p className="text-[14px] font-light text-zinc-200 leading-relaxed text-center sm:text-left">{activeReportDetail.insight}</p>
                 </div>
               )}
             </>
@@ -581,11 +624,11 @@ export default function ReportsPage({
 
         <div className="space-y-6">
           <div className="space-y-4">
-            <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-500 mb-3 block">How did it feel?</span>
+            <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-300 sm:text-zinc-500 mb-3 block text-center sm:text-left">How did it feel?</span>
             {activeReportDetail.feelings.length === 0 ? (
-              <p className="text-zinc-600 text-xs italic font-light">No sensations logged for this session.</p>
+              <p className="text-zinc-600 text-xs italic font-light text-center sm:text-left">No sensations logged for this session.</p>
             ) : (
-              <div className="flex flex-wrap gap-4">
+              <div className="flex flex-wrap justify-center sm:justify-start gap-4">
                 {activeReportDetail.feelings.map(f => (
                   <div key={f} className="flex flex-col items-center gap-2">
                     <div
@@ -606,9 +649,9 @@ export default function ReportsPage({
           </div>
 
           <div className="space-y-4">
-            <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-500 mb-3 block">Notes</span>
+            <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-300 sm:text-zinc-500 mb-3 block text-center sm:text-left">Notes</span>
             <div
-              className="w-full rounded-xl px-4 py-3 text-[12.5px] font-light text-zinc-200 leading-relaxed min-h-[56px]"
+              className="w-full rounded-xl px-4 py-3 text-[12.5px] font-light text-zinc-200 leading-relaxed min-h-[56px] text-center sm:text-left"
               style={{
                 background: 'rgba(23,169,201,0.10)',
                 border: '1px solid rgba(33,232,255,0.2)',
@@ -638,13 +681,13 @@ export default function ReportsPage({
 
   return (
     <div className="w-full pb-10 select-none" id="reports-page-container">
-      <div className="mb-4 mt-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex flex-col gap-4">
+      <div className="mb-4 mt-6 flex flex-row items-center justify-between gap-3 sm:gap-4">
+        <div className="flex flex-col gap-4 min-w-0">
           <div>
-            <h2 className="text-white text-2xl md:text-3xl font-light tracking-wide font-display leading-none mb-4">
+            <h2 className="text-white text-lg sm:text-2xl md:text-3xl font-light tracking-wide font-display leading-none mb-2 sm:mb-4">
               Analyze Your Voice
             </h2>
-            <p className="text-sm font-medium text-zinc-400 leading-snug max-w-md mt-1.5">
+            <p className="text-xs sm:text-sm font-medium text-zinc-400 leading-snug max-w-[220px] sm:max-w-md mt-1 sm:mt-1.5">
               Measure vocal performance, monitor fatigue and recovery, and gain actionable insights to keep your voice performing at its best.
             </p>
           </div>
@@ -656,10 +699,10 @@ export default function ReportsPage({
           {/* Voice Analyzer circle button */}
           <button
             onClick={() => setShowAnalyzer(true)}
-            className="group/va relative flex flex-col items-center gap-2 cursor-pointer"
+            className="group/va relative flex flex-col items-center gap-2 cursor-pointer flex-shrink-0"
           >
             <div
-              className="relative w-[92px] h-[92px] rounded-full flex items-center justify-center transition-all duration-300 group-hover/va:scale-105"
+              className="relative w-16 h-16 sm:w-[92px] sm:h-[92px] rounded-full flex items-center justify-center transition-all duration-300 group-hover/va:scale-105"
               style={{
                 background: 'radial-gradient(circle at 38% 32%, rgba(33,232,255,0.22) 0%, rgba(23,169,201,0.08) 55%, rgba(12,14,18,0.9) 100%)',
                 border: '1.5px solid rgba(33,232,255,0.45)',
@@ -670,10 +713,10 @@ export default function ReportsPage({
                 className="absolute inset-0 rounded-full animate-ping opacity-20"
                 style={{ border: '1px solid rgba(33,232,255,0.6)', animationDuration: '2.4s' }}
               />
-              <Mic className="w-7 h-7 text-[#21e8ff] group-hover/va:scale-110 transition-transform duration-300" style={{ filter: 'drop-shadow(0 0 8px rgba(33,232,255,0.6))' }} />
+              <Mic className="w-5 h-5 sm:w-7 sm:h-7 text-[#21e8ff] group-hover/va:scale-110 transition-transform duration-300" style={{ filter: 'drop-shadow(0 0 8px rgba(33,232,255,0.6))' }} />
             </div>
             <div className="flex flex-col items-center gap-1">
-              <span className="text-[13px] font-medium text-[#21e8ff] tracking-wide">Record Analysis</span>
+              <span className="text-[10px] sm:text-[13px] font-medium text-[#21e8ff] tracking-wide whitespace-nowrap">Record Analysis</span>
             </div>
           </button>
 
@@ -682,8 +725,8 @@ export default function ReportsPage({
 
       <div className="border-b border-zinc-900/40 mb-6" />
 
-      <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
-        <div className="relative flex items-center w-full max-w-xs">
+      <div className="mb-4 flex items-center justify-between gap-2 sm:gap-4 flex-nowrap">
+        <div className="relative flex items-center flex-1 min-w-0 sm:w-full sm:max-w-xs">
           <input
             type="text"
             value={searchQuery}
@@ -699,15 +742,16 @@ export default function ReportsPage({
         </div>
 
         {/* Sort + multi-select row */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <div className="relative">
             <button
               onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
-              className="flex items-center gap-2.5 px-4 py-2.5 bg-[#181b22] hover:bg-[#1d212a] border border-zinc-800/80 hover:border-[#17A9C9]/35 rounded-xl text-zinc-300 hover:text-white text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none"
+              className="flex items-center gap-2.5 px-2.5 sm:px-4 py-2.5 bg-[#181b22] hover:bg-[#1d212a] border border-zinc-800/80 hover:border-[#17A9C9]/35 rounded-xl text-zinc-300 hover:text-white text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none"
+              title={`Sort: ${sortBy === 'recent' ? 'Most Recent' : 'Alphabetical'}`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-[#21e8ff]" />
-              <span>Sort: <strong className="font-semibold text-white">{sortBy === 'recent' ? 'Most Recent' : 'Alphabetical'}</strong></span>
-              <ChevronDown className={`w-3 h-3 transition-transform duration-300 text-zinc-500 ${isSortDropdownOpen ? 'rotate-180' : ''}`} />
+              <span className="hidden sm:inline">Sort: <strong className="font-semibold text-white">{sortBy === 'recent' ? 'Most Recent' : 'Alphabetical'}</strong></span>
+              <ChevronDown className={`hidden sm:block w-3 h-3 transition-transform duration-300 text-zinc-500 ${isSortDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {isSortDropdownOpen && (
@@ -731,13 +775,14 @@ export default function ReportsPage({
 
           <button
             onClick={() => setShowFavouritesOnly(v => !v)}
-            className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none ${showFavouritesOnly
+            title="Favourites"
+            className={`flex items-center gap-2 px-2.5 sm:px-4 py-2.5 border rounded-xl text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none ${showFavouritesOnly
               ? 'bg-[#17A9C9]/15 border-[#17A9C9]/45 text-[#21e8ff]'
               : 'bg-[#181b22] hover:bg-[#1d212a] border-zinc-800/80 hover:border-[#17A9C9]/35 text-zinc-300 hover:text-white'
               }`}
           >
-            <Star className="w-3.5 h-3.5" />
-            <span>Favourites</span>
+            <Star className="w-3.5 h-3.5" style={showFavouritesOnly ? { fill: '#21e8ff' } : undefined} />
+            <span className="hidden sm:inline">Favourites</span>
           </button>
         </div>
       </div>

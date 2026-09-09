@@ -11,11 +11,13 @@ const FEATURES = [
   { id: 'reports', label: 'Weekly Reports', sub: 'Track your progress', Icon: ClipboardList, position: 'bottom-right' as const },
 ];
 
+// Mobile positions are staggered per-node (rather than mirrored pairs) so the four callouts read as
+// scattered around the headline instead of snapped to a symmetric grid.
 const POSITION_CLASSES: Record<string, string> = {
-  'top-left': 'top-[28%] left-[4%] sm:left-[8%] lg:left-[10%]',
-  'bottom-left': 'bottom-[32%] left-[4%] sm:left-[6%] lg:left-[8%]',
-  'top-right': 'top-[28%] right-[4%] sm:right-[8%] lg:right-[12%]',
-  'bottom-right': 'bottom-[32%] right-[4%] sm:right-[6%] lg:right-[9%]',
+  'top-left': 'top-[27%] left-[8%] sm:top-[28%] sm:left-[8%] lg:left-[10%]',
+  'bottom-left': 'bottom-[24%] left-[6%] sm:bottom-[32%] sm:left-[6%] lg:left-[8%]',
+  'top-right': 'top-[25%] right-[6%] sm:top-[28%] sm:right-[8%] lg:right-[12%]',
+  'bottom-right': 'bottom-[20%] right-[2%] sm:bottom-[32%] sm:right-[6%] lg:right-[9%]',
 };
 
 export default function FeatureNodes() {
@@ -46,18 +48,18 @@ export default function FeatureNodes() {
             transition={{ type: 'spring', stiffness: 130, damping: 20, delay: 0.5 + i * 0.35 }}
             className={`absolute ${POSITION_CLASSES[feature.position]}`}
           >
-            <div className={`flex items-center gap-3 animate-float ${isRight ? 'flex-row-reverse' : ''}`} style={{ animationDelay: `${i * 0.6}s` }}>
+            <div className={`flex items-center gap-2 sm:gap-3 animate-float ${isRight ? 'flex-row-reverse' : ''}`} style={{ animationDelay: `${i * 0.6}s` }}>
               <div className="relative">
-                <div className="w-8 h-8 rounded-full bg-[#141820]/90 border border-[#17A9C9]/30 flex items-center justify-center backdrop-blur-md shadow-lg shadow-black/60">
-                  <feature.Icon className="w-3.5 h-3.5 text-[#21e8ff]" />
+                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-[#141820]/90 border border-[#17A9C9]/30 flex items-center justify-center backdrop-blur-md shadow-lg shadow-black/60">
+                  <feature.Icon className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 text-[#21e8ff]" />
                 </div>
                 <div className="absolute -inset-1 rounded-full bg-[#17A9C9]/10 blur-sm -z-10" />
               </div>
               <div className={`flex flex-col ${isRight ? 'text-right' : 'text-left'}`}>
-                <div className={`flex items-center gap-1.5 text-xs sm:text-sm font-medium text-white/95 tracking-wide ${isRight ? 'justify-end' : ''}`}>
+                <div className={`flex items-center gap-1.5 text-[10px] sm:text-sm font-medium text-white/95 tracking-wide ${isRight ? 'justify-end' : ''}`}>
                   <span>{feature.label}</span>
                 </div>
-                <span className={`text-[10px] sm:text-xs text-zinc-400 font-sans ${isRight ? 'pr-3' : 'pl-3'}`}>{feature.sub}</span>
+                <span className={`text-[8px] sm:text-xs text-zinc-400 font-sans ${isRight ? 'pr-2 sm:pr-3' : 'pl-2 sm:pl-3'}`}>{feature.sub}</span>
               </div>
             </div>
           </motion.div>

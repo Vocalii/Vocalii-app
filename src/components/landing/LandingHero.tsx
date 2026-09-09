@@ -24,21 +24,21 @@ export default function LandingHero({ onGetStarted, onSignIn }: Props) {
   }, []);
 
   return (
-    <div id="landing-hero-content" className="relative z-20 flex flex-col items-center text-center max-w-3xl mx-auto px-4 pt-4 sm:pt-8 md:pt-12">
+    <div id="landing-hero-content" className="relative z-20 flex flex-col items-center text-center max-w-3xl mx-auto px-5 pt-4 sm:pt-8 md:pt-12">
       <LandingDemoCard />
 
       <motion.div
         initial={{ opacity: 0, y: 24, scale: 0.92 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ type: 'spring', stiffness: 120, damping: 22 }}
-        className="mb-5 sm:mb-6"
+        className="mb-6 sm:mb-6"
       >
         {/* drop-shadow glow adds visual weight/prominence without bumping the font weight. */}
         <h1
-          className="text-xl sm:text-5xl md:text-6xl lg:text-[64px] font-normal font-display text-white tracking-tight leading-[1.1]"
+          className="text-3xl sm:text-5xl md:text-6xl lg:text-[64px] font-normal font-display text-white tracking-tight leading-[1.15]"
           style={{ filter: 'drop-shadow(0 0 28px rgba(33,232,255,0.3))' }}
         >
-          Your Voice, Coached{' '}
+          <span className="block sm:inline">Your Voice, Coached</span>{' '}
           <AnimatePresence mode="wait">
             <motion.span
               key={suffixIndex}
@@ -46,7 +46,7 @@ export default function LandingHero({ onGetStarted, onSignIn }: Props) {
               animate={{ opacity: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, filter: 'blur(6px)' }}
               transition={{ duration: 0.9, ease: 'easeInOut' }}
-              className="inline-block text-[#21e8ff]"
+              className="block sm:inline-block text-[#21e8ff]"
             >
               {HEADLINE_SUFFIXES[suffixIndex]}
             </motion.span>
@@ -58,7 +58,7 @@ export default function LandingHero({ onGetStarted, onSignIn }: Props) {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 120, damping: 24, delay: 0.35 }}
-        className="text-zinc-300/85 text-sm sm:text-base md:text-lg max-w-2xl font-normal leading-relaxed mb-8 sm:mb-10 px-2"
+        className="text-zinc-300/85 text-sm sm:text-base md:text-lg max-w-2xl font-normal leading-relaxed mb-9 sm:mb-10 px-1"
       >
         AI-guided vocal rituals, daily check-ins, and real progress tracking, built for speakers,
         educators, and anyone who relies on their voice.

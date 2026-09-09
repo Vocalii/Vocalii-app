@@ -112,10 +112,10 @@ export default function HeroSection({
 
             {traitQuote && traitColor && (
               <div
-                className="flex items-start gap-2 mt-3 pl-3 max-w-md border-l-2"
+                className="flex items-start gap-2 mt-3 pl-3 max-w-full sm:max-w-md border-l-2"
                 style={{ borderColor: traitColor.border }}
               >
-                <p className="text-[11px] italic text-zinc-400 leading-snug">
+                <p className="text-[9px] sm:text-[11px] italic text-zinc-400 leading-snug whitespace-nowrap">
                   I want my voice to {traitQuote}
                 </p>
               </div>
@@ -123,7 +123,7 @@ export default function HeroSection({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="px-3.5 py-1.5 bg-zinc-900/60 text-[10px] tracking-[0.2em] font-bold uppercase text-zinc-400 border border-zinc-800/80 rounded-full shadow-inner mt-0.5">
+            <span className="px-3.5 py-1.5 bg-zinc-900/60 text-[8px] sm:text-[10px] tracking-[0.2em] font-bold uppercase text-zinc-400 border border-zinc-800/80 rounded-full shadow-inner mt-0.5 whitespace-nowrap">
               {selectedTrait ? `${selectedTrait} ` : ''}{(userRole && ROLE_LABELS[userRole]) || 'Vocalist'}
             </span>
           </div>

@@ -39,7 +39,7 @@ export default function LandingPage({ onGetStarted, onSignIn }: Props) {
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         onMouseMove={handleMouseMove}
-        className={`relative w-full max-w-[1440px] min-h-[78vh] sm:min-h-[680px] sm:rounded-[32px] overflow-hidden flex flex-col justify-between transition-all duration-500 border ${
+        className={`relative w-full max-w-[1440px] min-h-screen sm:min-h-[680px] sm:rounded-[32px] overflow-hidden flex flex-col justify-between transition-all duration-500 border ${
           isHovered
             ? 'border-[#21e8ff]/20 shadow-[0_25px_90px_rgba(0,0,0,0.98),0_0_30px_rgba(33,232,255,0.07)]'
             : 'border-white/[0.08] shadow-[0_25px_90px_rgba(0,0,0,0.98)]'
@@ -70,7 +70,7 @@ export default function LandingPage({ onGetStarted, onSignIn }: Props) {
         <FeatureNodes />
         <LandingNavbar onGetStarted={onGetStarted} onSignIn={onSignIn} />
 
-        <div className="flex-1 flex flex-col justify-center my-auto py-6 sm:py-8 -mt-8 sm:-mt-16">
+        <div className="flex-1 flex flex-col justify-center my-auto py-10 sm:py-8 sm:-mt-16">
           <LandingHero onGetStarted={onGetStarted} onSignIn={onSignIn} />
         </div>
       </div>

@@ -341,9 +341,16 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
           <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
             <div className="flex items-start gap-4 pl-2">
               <div className="flex flex-col">
-                <h3 className="text-[13px] font-semibold text-white tracking-wide mb-1 flex items-center flex-wrap gap-2.5">
-                  Daily Vocal Protocol
-                </h3>
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <h3 className="text-[13px] font-semibold text-white tracking-wide flex items-center flex-wrap gap-2.5">
+                    Daily Vocal Protocol
+                  </h3>
+                  <span className="md:hidden text-[12px] font-light text-zinc-400 leading-none flex-shrink-0">
+                    <span className="text-[#21e8ff] font-medium">{completedCount}</span>
+                    <span className="text-zinc-700 mx-1">/</span>
+                    <span>{dailyRitualIds.length}</span>
+                  </span>
+                </div>
                 {activePrepEvent && (
                   <div
                     className="mb-2.5 flex items-center gap-2 rounded-full w-fit"
@@ -364,12 +371,12 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                       ? ritualInsight
                       : 'Complete your personalized voice exercises and daily check-in to build healthier vocal habits and track your progress.'}
                 </p>
-                <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="flex items-center gap-1.5 sm:gap-2.5 flex-nowrap sm:flex-wrap">
                   {/* Daily Check-In Button */}
                   {checkInDone ? (
                     <button
                       disabled
-                      className={`border px-5 py-2.5 text-[10px] font-semibold tracking-widest rounded-xl flex items-center gap-2 opacity-60 cursor-default w-fit ${activePrepEvent ? 'border-[#3b82f6]/25 bg-[#3b82f6]/5' : 'border-[#17A9C9]/25 bg-[#17A9C9]/5'}`}
+                      className={`border px-3 sm:px-5 py-2 sm:py-2.5 text-[9px] sm:text-[10px] font-semibold tracking-widest rounded-xl flex items-center gap-1.5 sm:gap-2 opacity-60 cursor-default w-fit whitespace-nowrap ${activePrepEvent ? 'border-[#3b82f6]/25 bg-[#3b82f6]/5' : 'border-[#17A9C9]/25 bg-[#17A9C9]/5'}`}
                     >
                       <Check className={`w-3 h-3 ${activePrepEvent ? 'text-[#60a5fa]' : 'text-[#17A9C9]'}`} />
                       <span className={activePrepEvent ? 'text-[#60a5fa]' : 'text-[#17A9C9]'}>Checked In</span>
@@ -378,7 +385,7 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                   {checkInDone && onResetCheckIn && (
                     <button
                       onClick={onResetCheckIn}
-                      className="text-[9px] font-mono tracking-widest uppercase text-zinc-600 hover:text-zinc-400 transition-colors cursor-pointer underline decoration-dotted underline-offset-2"
+                      className="text-[9px] font-mono tracking-widest uppercase text-zinc-600 hover:text-zinc-400 transition-colors cursor-pointer underline decoration-dotted underline-offset-2 whitespace-nowrap"
                       title="Dev/testing only — clears today's check-in so you can log it again"
                     >
                       Reset (dev)
@@ -387,22 +394,25 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                   {!checkInDone && (
                     <button
                       onClick={() => setShowCheckInModal(true)}
-                      className={`relative overflow-hidden group/ci px-5 py-2.5 text-[10px] font-semibold tracking-widest uppercase rounded-xl flex items-center gap-2.5 transition-all duration-300 cursor-pointer w-fit border ${activePrepEvent
+                      className={`relative overflow-hidden group/ci px-3 sm:px-5 py-2 sm:py-2.5 text-[9px] sm:text-[10px] font-semibold tracking-widest uppercase rounded-xl flex items-center gap-1.5 sm:gap-2.5 transition-all duration-300 cursor-pointer w-fit whitespace-nowrap border ${activePrepEvent
                         ? 'bg-[#3b82f6]/20 hover:bg-[#3b82f6]/30 border-[#3b82f6]/55 hover:border-[#60a5fa]/75 shadow-[0_0_12px_rgba(59,130,246,0.14)] hover:shadow-[0_0_18px_rgba(59,130,246,0.28)]'
                         : 'bg-[#17A9C9]/20 hover:bg-[#17A9C9]/30 border-[#17A9C9]/55 hover:border-[#21e8ff]/75 shadow-[0_0_12px_rgba(23,169,201,0.12)] hover:shadow-[0_0_18px_rgba(23,169,201,0.25)]'
                         }`}
                     >
                       <div className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/[0.05] to-transparent -skew-x-12 translate-x-[-150%] group-hover/ci:translate-x-[250%] transition-transform duration-[1000ms] ease-in-out" />
-                      <span className="text-white transition-colors duration-300">Daily Check-In</span>
+                      <span className="text-white transition-colors duration-300">
+                        <span className="sm:hidden">Check-In</span>
+                        <span className="hidden sm:inline">Daily Check-In</span>
+                      </span>
                     </button>
                   )}
 
                   {/* Active/Start Daily Ritual Button */}
-                  <div className="relative group/lock w-fit">
+                  <div className="relative group/lock w-fit flex-shrink-0">
                     <button
                       onClick={checkInDone ? handleStartDailyRituals : undefined}
                       disabled={!checkInDone}
-                      className={`relative overflow-hidden group/btn border px-5 py-2.5 text-[10px] font-bold tracking-widest uppercase rounded-xl flex items-center gap-2.5 transition-all duration-300 w-fit ${checkInDone
+                      className={`relative overflow-hidden group/btn border px-3 sm:px-5 py-2 sm:py-2.5 text-[9px] sm:text-[10px] font-bold tracking-widest uppercase rounded-xl flex items-center gap-1.5 sm:gap-2.5 transition-all duration-300 w-fit whitespace-nowrap ${checkInDone
                         ? activePrepEvent
                           ? 'bg-[#131722]/50 hover:bg-[#1b2130]/75 border-[#3b82f6]/30 hover:border-[#60a5fa]/60 cursor-pointer shadow-[0_4px_12px_rgba(0,0,0,0.15),inset_0_1px_1px_rgba(255,255,255,0.02)] hover:shadow-[0_0_15px_rgba(59,130,246,0.2)]'
                           : 'bg-[#131722]/50 hover:bg-[#1b2130]/75 border-[#17A9C9]/30 hover:border-[#21e8ff]/60 cursor-pointer shadow-[0_4px_12px_rgba(0,0,0,0.15),inset_0_1px_1px_rgba(255,255,255,0.02)] hover:shadow-[0_0_15px_rgba(33,232,255,0.15)]'
@@ -412,9 +422,16 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                       {checkInDone && <div className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/[0.04] to-transparent -skew-x-12 translate-x-[-150%] group-hover/btn:translate-x-[250%] transition-transform duration-[1200ms] ease-in-out" />}
                       <Play className={`w-3 h-3 fill-current opacity-80 ${checkInDone ? 'group-hover/btn:scale-110 transition-transform duration-300' : ''}`} />
                       <span className={`font-semibold tracking-widest transition-colors duration-300 ${checkInDone ? (activePrepEvent ? 'text-[#60a5fa] group-hover/btn:text-white' : 'text-[#21e8ff] group-hover/btn:text-white') : 'text-zinc-500'}`}>
-                        {activePrepEvent
-                          ? (completedCount === 0 ? 'Start Preparation Rituals' : completedCount === dailyRitualIds.length ? 'Restart Preparation' : 'Continue Preparation')
-                          : (completedCount === 0 ? 'Start Daily Rituals' : completedCount === dailyRitualIds.length ? 'Restart Routine' : 'Continue Routine')}
+                        <span className="sm:hidden">
+                          {activePrepEvent
+                            ? (completedCount === 0 ? 'Start Prep' : completedCount === dailyRitualIds.length ? 'Restart' : 'Continue')
+                            : (completedCount === 0 ? 'Start Rituals' : completedCount === dailyRitualIds.length ? 'Restart' : 'Continue')}
+                        </span>
+                        <span className="hidden sm:inline">
+                          {activePrepEvent
+                            ? (completedCount === 0 ? 'Start Preparation Rituals' : completedCount === dailyRitualIds.length ? 'Restart Preparation' : 'Continue Preparation')
+                            : (completedCount === 0 ? 'Start Daily Rituals' : completedCount === dailyRitualIds.length ? 'Restart Routine' : 'Continue Routine')}
+                        </span>
                       </span>
                     </button>
                     {!checkInDone && (
@@ -428,8 +445,8 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
             </div>
 
             {/* Progress indicator */}
-            <div className="flex items-center gap-4.5 w-full md:w-auto md:border-l border-zinc-800/80 md:pl-6.5 flex-shrink-0 justify-between md:justify-start">
-              <div className="flex flex-col items-start md:items-end">
+            <div className="hidden md:flex items-center gap-4.5 w-full md:w-auto md:border-l border-zinc-800/80 md:pl-6.5 flex-shrink-0 justify-between md:justify-start">
+              <div className="hidden md:flex flex-col items-start md:items-end">
                 <span className="text-[9px] font-light text-zinc-500 uppercase tracking-widest mb-1.5">
                   Today's Routine
                 </span>
@@ -446,7 +463,7 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                 const pct = completedCount / Math.max(dailyRitualIds.length, 1);
                 const circumference = 2 * Math.PI * 34;
                 return (
-                  <div className="relative w-20 h-20 flex items-center justify-center flex-shrink-0">
+                  <div className="hidden md:flex relative w-20 h-20 items-center justify-center flex-shrink-0">
                     <motion.svg
                       className="w-full h-full transform -rotate-90"
                       viewBox="0 0 80 80"
@@ -996,12 +1013,12 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
           </h2>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 border-b border-zinc-900/40 pb-5">
             {/* Category filter tabs */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 flex-nowrap md:flex-wrap overflow-x-auto md:overflow-visible -mx-4 px-4 md:mx-0 md:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {categories.map((cat) => (
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-4 py-2 text-xs rounded-xl transition-all duration-300 border cursor-pointer ${selectedCategory === cat
+                  className={`px-4 py-2 text-xs rounded-xl transition-all duration-300 border cursor-pointer flex-shrink-0 whitespace-nowrap ${selectedCategory === cat
                     ? `${CATEGORY_PILL_STYLES[cat] ?? 'bg-[#17A9C9]/25 border-[#17A9C9]/50'} text-white font-semibold tracking-wide`
                     : 'bg-zinc-900/40 border-zinc-900 hover:border-zinc-800 text-zinc-400 hover:text-white'
                     }`}
@@ -1120,7 +1137,7 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                   <div
                     key={ritual.id}
                     onClick={() => startRitual(ritual)}
-                    className={`${itemTheme.wrapperClass} rounded-[28px] p-5.5 transition-all duration-500 flex flex-col justify-between group cursor-pointer relative overflow-hidden`}
+                    className={`${itemTheme.wrapperClass} rounded-[28px] p-4 sm:p-5.5 transition-all duration-500 flex flex-col justify-between group cursor-pointer relative overflow-hidden`}
                   >
                     {/* Subtle top light edge */}
                     <div className={`absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent ${itemTheme.lightEdgeClass} to-transparent z-10`} />
@@ -1130,7 +1147,7 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
 
                     <div className="relative z-10">
                       {/* Header line: Category + duration info with a color-coded dot */}
-                      <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center justify-between mb-3 sm:mb-4">
                         <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-wide text-zinc-400">
                           <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
                           {ritual.category}
@@ -1141,17 +1158,19 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                         </div>
                       </div>
 
-                      <h3 className="text-sm font-semibold text-zinc-200 group-hover:text-white transition-colors mb-2 tracking-wide">
+                      <h3 className="text-sm font-semibold text-zinc-200 group-hover:text-white transition-colors mb-1.5 sm:mb-2 tracking-wide">
                         {ritual.name}
                       </h3>
 
-                      <p className="text-[11.5px] text-zinc-500 leading-relaxed mb-6">
+                      <p className="text-[11.5px] text-zinc-500 leading-relaxed mb-3 sm:mb-6">
                         {ritual.description}
                       </p>
                     </div>
 
-                    {/* Actions footer */}
-                    <div className="border-t border-zinc-900/60 pt-4 flex items-center justify-between mt-auto relative z-10">
+                    {/* Actions footer — arrow affordance kept for pointer devices only; dropped on
+                        mobile both to save vertical space and because tapping the whole card already
+                        opens it. */}
+                    <div className="hidden sm:flex border-t border-zinc-900/60 pt-4 items-center justify-between mt-auto relative z-10">
                       <div />
                       <span className={`transition-transform duration-300 group-hover:translate-x-1.5 ${itemTheme.textAndActionColor}`}>
                         <ArrowRight className="w-6 h-6 stroke-[2]" />
@@ -1721,9 +1740,10 @@ export default function RitualsPage({ dailyRitualIds, activePrepEvent, completed
                   </div>
                 </div>
 
-                {/* RIGHT — Hero + Description */}
+                {/* RIGHT — Hero + Description (shown first on mobile, where the grid stacks to one
+                    column, so the visual leads instead of trailing the text) */}
                 <div
-                  className="rounded-[28px] overflow-hidden relative flex flex-col"
+                  className="order-first lg:order-none rounded-[28px] overflow-hidden relative flex flex-col"
                   style={{
                     background: 'linear-gradient(160deg, #13161e 0%, #0f1117 100%)',
                     border: '1px solid rgba(255,255,255,0.06)',

@@ -93,7 +93,7 @@ export default function InteractiveMap({ vocalData, dailyRitualIds, completedRit
             </div>
             {result && style && (
               <div className="flex items-center gap-3">
-                <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-md border ${style.bg} ${style.border} ${style.color}`}>
+                <span className={`text-[8px] sm:text-[10px] font-bold uppercase tracking-[0.2em] px-3.5 py-1.5 rounded-full border whitespace-nowrap ${style.bg} ${style.border} ${style.color}`}>
                   {result.label}
                 </span>
               </div>

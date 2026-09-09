@@ -242,7 +242,11 @@ export default function App() {
   const handleCloseTutorialVideos = () => {
     if (videoOverlay?.sequence && !tutorialVideosSeen) {
       setTutorialVideosSeen(true);
-      if (userId) supabase.from('profiles').update({ tutorial_videos_seen: true }).eq('id', userId);
+      if (userId) {
+        supabase.from('profiles').update({ tutorial_videos_seen: true }).eq('id', userId).then(({ error }) => {
+          if (error) console.error('Failed to persist tutorial_videos_seen:', error);
+        });
+      }
     }
     setVideoOverlay(null);
   };
@@ -479,6 +483,7 @@ export default function App() {
       setVoiceBarrier(data.voiceBarrier);
       setUserHabits(data.habitPairs);
       setOnboardingDone(true);
+      setVideoOverlay({ startIndex: 0, sequence: true });
       return;
     }
 
@@ -543,6 +548,7 @@ export default function App() {
     setUserHabits(data.habitPairs);
     setAccountCreatedAt(new Date().toISOString());
     setOnboardingDone(true);
+    setVideoOverlay({ startIndex: 0, sequence: true });
   };
 
   // ─── Profile edits ──────────────────────────────────────────────────────────

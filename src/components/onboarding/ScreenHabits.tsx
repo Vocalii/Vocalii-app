@@ -50,7 +50,7 @@ export default function ScreenHabits({ value, onChange, onNext, onBack, step, to
         <div className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] rounded-full bg-violet-600/5 blur-[120px]" />
       </div>
 
-      <div className="flex flex-col w-full max-w-6xl px-10 sm:px-16 py-12 relative z-10">
+      <div className="flex flex-col w-full max-w-6xl px-5 sm:px-16 py-12 relative z-10">
 
         {/* Logo + progress */}
         <div className="flex flex-col items-center mb-10">
@@ -81,8 +81,9 @@ export default function ScreenHabits({ value, onChange, onNext, onBack, step, to
           <div className="h-px flex-1 bg-zinc-800/60" />
         </div>
 
-        {/* Two columns, circles wrap within each */}
-        <div className="grid grid-cols-2 gap-14 mb-6">
+        {/* Two columns on larger screens; stacked (daily first, then vocal) on mobile since two
+            narrow half-width columns of circles was causing severe overlap/clipping. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 sm:gap-14 mb-6">
           {/* Daily habits */}
           <div>
             <span
@@ -96,7 +97,7 @@ export default function ScreenHabits({ value, onChange, onNext, onBack, step, to
               }}
             >Daily Habits</span>
             <div className="max-h-[340px] overflow-y-auto [&::-webkit-scrollbar]:hidden">
-              <div className="grid grid-cols-3 gap-6 px-4 py-4">
+              <div className="flex flex-wrap justify-center gap-1.5 sm:gap-6 px-1 sm:px-4 py-4">
                 {DAILY_HABITS.map((habit, i) => {
                   const isPaired = pairedDailyIds.has(habit.id);
                   const isPending = pendingDaily === habit.id;
@@ -110,7 +111,7 @@ export default function ScreenHabits({ value, onChange, onNext, onBack, step, to
                       whileHover={!isPaired ? { scale: 1.07 } : {}}
                       whileTap={!isPaired ? { scale: 0.94 } : {}}
                       disabled={isPaired}
-                      className="flex flex-col items-center justify-center gap-2 w-[130px] h-[130px] rounded-full transition-all duration-200 cursor-pointer disabled:cursor-default select-none"
+                      className="flex flex-col items-center justify-center gap-1 sm:gap-2 w-[92px] h-[92px] sm:w-[130px] sm:h-[130px] rounded-full transition-all duration-200 cursor-pointer disabled:cursor-default select-none"
                       style={isPending ? {
                         background: 'linear-gradient(135deg, rgba(33,232,255,0.18) 0%, rgba(33,232,255,0.06) 100%)',
                         border: '1.5px solid rgba(33,232,255,0.6)',
@@ -124,10 +125,10 @@ export default function ScreenHabits({ value, onChange, onNext, onBack, step, to
                         boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
                       }}
                     >
-                      <span className="text-2xl leading-none" style={{ filter: isPending ? 'drop-shadow(0 0 8px rgba(33,232,255,0.5))' : 'none' }}>
+                      <span className="text-lg sm:text-2xl leading-none" style={{ filter: isPending ? 'drop-shadow(0 0 8px rgba(33,232,255,0.5))' : 'none' }}>
                         {habit.emoji}
                       </span>
-                      <span className="text-[9px] font-light text-center leading-tight px-2 transition-colors duration-200" style={{ color: isPending ? '#e4e4e7' : '#a1a1aa' }}>
+                      <span className="text-[7.5px] sm:text-[9px] font-light text-center leading-tight px-1.5 sm:px-2 transition-colors duration-200" style={{ color: isPending ? '#e4e4e7' : '#a1a1aa' }}>
                         {habit.label}
                       </span>
                     </motion.button>
@@ -150,7 +151,7 @@ export default function ScreenHabits({ value, onChange, onNext, onBack, step, to
               }}
             >Vocal Habits</span>
             <div className="max-h-[340px] overflow-y-auto [&::-webkit-scrollbar]:hidden">
-              <div className="grid grid-cols-3 gap-6 px-4 py-4">
+              <div className="flex flex-wrap justify-center gap-1.5 sm:gap-6 px-1 sm:px-4 py-4">
                 {VOCAL_HABITS.map((habit, i) => {
                   const isPaired = pairedVocalIds.has(habit.id);
                   const isClickable = !!pendingDaily && !isPaired;
@@ -164,7 +165,7 @@ export default function ScreenHabits({ value, onChange, onNext, onBack, step, to
                       whileHover={isClickable ? { scale: 1.07 } : {}}
                       whileTap={isClickable ? { scale: 0.94 } : {}}
                       disabled={isPaired || !pendingDaily}
-                      className="flex flex-col items-center justify-center gap-2 w-[150px] h-[100px] rounded-full transition-all duration-200 select-none"
+                      className="flex flex-col items-center justify-center gap-1 sm:gap-2 w-[92px] h-[78px] sm:w-[150px] sm:h-[100px] rounded-full transition-all duration-200 select-none"
                       style={isPaired ? {
                         background: 'rgba(19,22,28,0.6)',
                         border: '1px solid rgba(37,99,235,0.15)',
@@ -181,8 +182,8 @@ export default function ScreenHabits({ value, onChange, onNext, onBack, step, to
                         cursor: 'not-allowed',
                       }}
                     >
-                      <span className="text-2xl leading-none" style={{ filter: isClickable ? 'drop-shadow(0 0 6px rgba(59,130,246,0.45))' : 'none' }}>{habit.emoji}</span>
-                      <span className="text-[9px] font-light text-center leading-tight px-2" style={{ color: isClickable ? '#93c5fd' : '#52525b' }}>
+                      <span className="text-lg sm:text-2xl leading-none" style={{ filter: isClickable ? 'drop-shadow(0 0 6px rgba(59,130,246,0.45))' : 'none' }}>{habit.emoji}</span>
+                      <span className="text-[7.5px] sm:text-[9px] font-light text-center leading-tight px-1.5 sm:px-2" style={{ color: isClickable ? '#93c5fd' : '#52525b' }}>
                         {habit.label}
                       </span>
                     </motion.button>

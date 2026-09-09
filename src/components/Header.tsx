@@ -116,21 +116,21 @@ export default function Header({
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 w-full bg-zinc-950/80 backdrop-blur-md border-b border-zinc-900/60 font-sans z-50 px-6 py-3.5 shadow-sm" id="safe-one-header">
-      <div className="w-full flex items-center justify-between gap-4 relative">
-        
+    <header className="fixed top-0 left-0 right-0 w-full bg-zinc-950/80 backdrop-blur-md border-b border-zinc-900/60 font-sans z-50 px-2.5 sm:px-6 py-3 sm:py-3.5 shadow-sm" id="safe-one-header">
+      <div className="w-full flex items-center justify-between gap-1.5 sm:gap-4 relative">
+
         {/* Left Side: Logo & Brand "SAFE ONE" - styled to align nicely */}
-        <div className="flex items-center gap-2.5 z-10 flex-shrink-0 select-none pl-3">
-          <img src="/assets/images/logo-mark.webp" alt="Vocalii" className="w-9 h-9 rounded-full flex-shrink-0 hover:opacity-90 transition-opacity duration-350" />
-          <span className="text-xs font-normal tracking-[0.25em] text-white uppercase font-sans whitespace-nowrap opacity-80 ">
+        <div className="flex items-center gap-2 sm:gap-2.5 z-10 flex-shrink-0 select-none pl-0.5 sm:pl-3">
+          <img src="/assets/images/logo-mark.webp" alt="Vocalii" className="w-8 h-8 sm:w-9 sm:h-9 rounded-full flex-shrink-0 hover:opacity-90 transition-opacity duration-350" />
+          <span className="hidden sm:inline text-xs font-normal tracking-[0.25em] text-white uppercase font-sans whitespace-nowrap opacity-80">
             Vocalii
           </span>
         </div>
 
         {/* Center: Replaced the horizontal layout navigation icons with clean, modern text links */}
         <div className="absolute left-1/2 -translate-x-1/2 z-20 select-none">
-          <div className="flex items-center gap-7">
-            
+          <div className="flex items-center gap-3 sm:gap-7">
+
             {/* Home Link */}
             <div className="relative">
               <button
@@ -138,7 +138,7 @@ export default function Header({
                   setCurrentView('home');
                   setActiveTab('Overview');
                 }}
-                className={`px-3 py-1.5 text-[13px] tracking-wide transition-all duration-300 relative cursor-pointer font-sans whitespace-nowrap ${
+                className={`px-2 sm:px-3 py-2.5 sm:py-1.5 text-[11px] sm:text-[13px] tracking-wide transition-all duration-300 relative cursor-pointer font-sans whitespace-nowrap ${
                   currentView === 'home'
                     ? 'text-white font-medium'
                     : 'text-zinc-500 hover:text-white font-normal'
@@ -154,7 +154,7 @@ export default function Header({
                 onClick={() => {
                   setCurrentView('rituals');
                 }}
-                className={`px-3 py-1.5 text-[13px] tracking-wide transition-all duration-300 relative cursor-pointer font-sans whitespace-nowrap ${
+                className={`px-2 sm:px-3 py-2.5 sm:py-1.5 text-[11px] sm:text-[13px] tracking-wide transition-all duration-300 relative cursor-pointer font-sans whitespace-nowrap ${
                   currentView === 'rituals'
                     ? 'text-white font-medium'
                     : 'text-zinc-500 hover:text-white font-normal'
@@ -168,7 +168,7 @@ export default function Header({
             <div className="relative">
               <button
                 onClick={() => setCurrentView('reports')}
-                className={`px-3 py-1.5 text-[13px] tracking-wide transition-all duration-300 relative cursor-pointer font-sans whitespace-nowrap ${
+                className={`px-2 sm:px-3 py-2.5 sm:py-1.5 text-[11px] sm:text-[13px] tracking-wide transition-all duration-300 relative cursor-pointer font-sans whitespace-nowrap ${
                   currentView === 'reports'
                     ? 'text-white font-medium'
                     : 'text-zinc-500 hover:text-white font-normal'
@@ -182,13 +182,13 @@ export default function Header({
         </div>
 
         {/* Right Side: Notification + User profile */}
-        <div className="flex items-center gap-4 justify-end z-10 flex-shrink-0 pr-6">
-          
+        <div className="flex items-center gap-1.5 sm:gap-4 justify-end z-10 flex-shrink-0 pr-0 sm:pr-6">
+
           {/* Notifications */}
           <div className="relative" ref={notifRef}>
             <button
               onClick={toggleNotifOpen}
-              className={`w-9 h-9 rounded-full border flex items-center justify-center transition-all duration-200 shadow-sm relative group cursor-pointer ${notifOpen ? 'text-[#21e8ff] bg-[#17A9C9]/20 border-[#17A9C9]/30' : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-[#21e8ff] hover:bg-[#17A9C9]/20 hover:border-[#17A9C9]/30'}`}
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full border flex items-center justify-center transition-all duration-200 shadow-sm relative group cursor-pointer ${notifOpen ? 'text-[#21e8ff] bg-[#17A9C9]/20 border-[#17A9C9]/30' : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-[#21e8ff] hover:bg-[#17A9C9]/20 hover:border-[#17A9C9]/30'}`}
               title="Notifications"
             >
               <Bell className="w-4 h-4" />
@@ -261,7 +261,7 @@ export default function Header({
           <div className="relative" ref={profileRef}>
             <button
               onClick={() => setProfileOpen(o => !o)}
-              className="w-9 h-9 rounded-full bg-zinc-900/60 border border-zinc-800/80 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 hover:border-zinc-700 transition-all duration-200 shadow-sm cursor-pointer"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-zinc-900/60 border border-zinc-800/80 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 hover:border-zinc-700 transition-all duration-200 shadow-sm cursor-pointer"
               title="Account"
             >
               <User className="w-4 h-4" />

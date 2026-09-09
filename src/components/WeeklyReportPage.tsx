@@ -107,7 +107,7 @@ function MetricCircle({ value, label, unit, color }: { value: string; label: str
       <motion.div
         whileHover={{ scale: 1.05 }}
         transition={{ type: 'spring', stiffness: 350, damping: 20 }}
-        className="w-[100px] h-[100px] rounded-full flex flex-col items-center justify-center"
+        className="w-[92px] h-[92px] sm:w-[100px] sm:h-[100px] rounded-full flex flex-col items-center justify-center"
         style={{
           background: `radial-gradient(circle at 38% 32%, ${color}20 0%, ${color}08 100%)`,
           border: `1px solid ${color}40`,
@@ -115,11 +115,11 @@ function MetricCircle({ value, label, unit, color }: { value: string; label: str
         }}
       >
         <div className="flex items-baseline gap-0.5">
-          <span className="text-[22px] font-light tabular-nums" style={{ color }}>{value}</span>
-          {unit && <span className="text-[10px]" style={{ color: `${color}80` }}>{unit}</span>}
+          <span className="text-[18px] sm:text-[22px] font-light tabular-nums" style={{ color }}>{value}</span>
+          {unit && <span className="text-[9px] sm:text-[10px]" style={{ color: `${color}80` }}>{unit}</span>}
         </div>
       </motion.div>
-      <span className="text-[9px] font-mono text-zinc-500 tracking-widest uppercase text-center">{label}</span>
+      <span className="text-[8px] sm:text-[9px] font-mono text-zinc-500 tracking-widest uppercase text-center">{label}</span>
     </div>
   );
 }
@@ -413,18 +413,18 @@ export default function WeeklyReportPage({ onBack, habitPairs, habitCompletions,
         </div>
 
         {/* 7-day strip */}
-        <div className="grid grid-cols-7 gap-2 mb-6">
+        <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-6">
           {weekData.map(day => {
             const effort = day.vocaEffort;
             const color = effort !== null ? EFFORT_COLOR(effort) : 'rgba(255,255,255,0.1)';
             return (
-              <div key={day.date} className="flex flex-col items-center gap-2">
-                <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-widest">{day.date}</span>
+              <div key={day.date} className="flex flex-col items-center gap-1 sm:gap-2">
+                <span className="text-[7px] sm:text-[9px] font-mono text-zinc-600 uppercase tracking-widest">{day.date}</span>
                 <motion.div
                   whileHover={{ scale: day.checkInDone ? 1.05 : 1 }}
                   transition={{ type: 'spring', stiffness: 350, damping: 20 }}
                   onClick={() => day.checkInDone && setSelectedDay(day)}
-                  className={`w-[100px] h-[100px] rounded-full flex items-center justify-center border ${day.checkInDone ? 'cursor-pointer' : 'cursor-default'}`}
+                  className={`w-11 h-11 sm:w-[100px] sm:h-[100px] rounded-full flex items-center justify-center border ${day.checkInDone ? 'cursor-pointer' : 'cursor-default'}`}
                   style={day.checkInDone ? {
                     background: `radial-gradient(circle at 38% 32%, ${color}20 0%, ${color}08 100%)`,
                     border: `1px solid ${color}40`,
@@ -435,19 +435,19 @@ export default function WeeklyReportPage({ onBack, habitPairs, habitCompletions,
                   }}
                 >
                   {day.checkInDone && effort !== null && (
-                    <span className="text-[18px] font-mono font-light" style={{ color }}>{effort}</span>
+                    <span className="text-[11px] sm:text-[18px] font-mono font-light" style={{ color }}>{effort}</span>
                   )}
                   {!day.checkInDone && (
-                    <span className="text-[10px] text-zinc-700">—</span>
+                    <span className="text-[8px] sm:text-[10px] text-zinc-700">—</span>
                   )}
                 </motion.div>
-                <div className="flex gap-0.5">
+                <div className="hidden sm:flex gap-0.5">
                   {Array.from({ length: day.totalRituals }).map((_, i) => (
                     <div key={i} className="w-1.5 h-1.5 rounded-full"
                       style={{ background: i < day.ritualsCompleted ? '#21e8ff' : 'rgba(255,255,255,0.1)' }} />
                   ))}
                 </div>
-                <span className="text-[8px] text-zinc-700">{day.fullDate.split(' ')[1]}</span>
+                <span className="hidden sm:inline text-[8px] text-zinc-700">{day.fullDate.split(' ')[1]}</span>
               </div>
             );
           })}
@@ -582,8 +582,10 @@ export default function WeeklyReportPage({ onBack, habitPairs, habitCompletions,
         </div>
 
         {/* Key metrics */}
-        <div className="flex justify-around mb-10">
-          <MetricCircle value={String(checkedInDays)} label="Check-ins" unit={`/7`} color="#21e8ff" />
+        <div className="flex flex-wrap justify-center gap-x-4 gap-y-4 sm:flex-nowrap sm:justify-around sm:gap-0 mb-10">
+          <div className="hidden sm:block">
+            <MetricCircle value={String(checkedInDays)} label="Check-ins" unit={`/7`} color="#21e8ff" />
+          </div>
           <MetricCircle value={String(totalRituals)} label="Rituals done" unit={`/${maxRituals}`} color="#818cf8" />
           <MetricCircle value={String(avgEffort)} label="Avg vocal effort" unit="/10" color={avgEffort !== '—' ? EFFORT_VIOLET_RED_COLOR(Number(avgEffort)) : '#818cf8'} />
           <MetricCircle value={String(avgConfidence)} label="Avg confidence" unit="/5" color="#a78bfa" />

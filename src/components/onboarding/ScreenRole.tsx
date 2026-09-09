@@ -76,11 +76,11 @@ export default function ScreenRole({ value, onChange, onNext, onBack, step, tota
                   {role.icon}
                 </div>
                 <div className="flex flex-col min-w-0">
-                  <span className="text-[12.5px] font-medium leading-tight transition-colors duration-200" style={{ color: selected ? '#fff' : '#d4d4d8' }}>
+                  <span className="text-[10.5px] font-medium leading-tight transition-colors duration-200" style={{ color: selected ? '#fff' : '#d4d4d8' }}>
                     {role.label}
                   </span>
                   {role.subtitle && (
-                    <span className="text-[10px] leading-snug mt-0.5 line-clamp-2" style={{ color: selected ? `${role.color}99` : '#52525b' }}>
+                    <span className="text-[9px] leading-snug mt-0.5 line-clamp-2" style={{ color: selected ? `${role.color}99` : '#52525b' }}>
                       {role.subtitle}
                     </span>
                   )}

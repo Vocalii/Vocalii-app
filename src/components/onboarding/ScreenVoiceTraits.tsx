@@ -129,7 +129,7 @@ export default function ScreenVoiceTraits({ desiredTraits, onChangeDesiredTraits
                   {trait.emoji}
                 </span>
                 <span
-                  className="text-[12px] font-semibold text-center leading-tight transition-colors duration-300"
+                  className="text-[10px] font-semibold text-center leading-tight transition-colors duration-300"
                   style={{ color: selected ? TRAIT_COLORS[trait.label].primary : '#71717a' }}
                 >
                   {trait.label}
@@ -156,7 +156,7 @@ export default function ScreenVoiceTraits({ desiredTraits, onChangeDesiredTraits
               className="overflow-hidden"
             >
               <div className="mt-8 flex flex-col items-center gap-2">
-                <label className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">
+                <label className="text-[9px] font-medium uppercase tracking-widest text-zinc-500">
                   (optional) I want my voice to:
                 </label>
                 <input

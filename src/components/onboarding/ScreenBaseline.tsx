@@ -32,7 +32,7 @@ export default function ScreenBaseline({ onNext, onBack: _onBack, onBaseline, st
         </div>
 
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold font-display text-white leading-tight tracking-tight mb-1">
+          <h1 className="text-2xl font-light font-display text-white leading-tight tracking-tight mb-1">
             Let's hear your voice
           </h1>
           <p className="text-xs text-zinc-500">

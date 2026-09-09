@@ -199,8 +199,10 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   const [barHeights, setBarHeights] = useState<number[]>(new Array(28).fill(0.08));
 
   const [formFeelings, setFormFeelings] = useState<string[]>([]);
+  const [formName, setFormName] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [savingInsight, setSavingInsight] = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
   const [notesFocused, setNotesFocused] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
   const logScrollRef = useRef<HTMLDivElement>(null);
@@ -437,7 +439,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     const now = new Date();
     const autoName = `Vocal Report — ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
     onSave({
-      name: autoName,
+      name: formName.trim() || autoName,
       ritualName: autoName,
       category: 'Calibrate',
       date: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -784,7 +786,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
             })()}
 
             {/* Circles row */}
-            <div className="flex flex-nowrap justify-center gap-5 overflow-x-auto py-2 w-full">
+            <div className="flex flex-wrap justify-center gap-4 sm:gap-5 py-2 w-full">
               <CircleMetric
                 value={`${metrics.pitchHz}`} unit="Hz" sub={noteFromHz(metrics.pitchHz)}
                 label="Pitch" accent="#21e8ff"
@@ -900,7 +902,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
                     style={{ color: 'rgba(195, 232, 248, 0.88)', textShadow: '0 0 22px rgba(33,190,255,0.35), 0 0 50px rgba(33,150,220,0.15)', animation: 'float-title 3.5s ease-in-out infinite' }}
                   >How did it feel?</h2>
                   <p className="text-[10px] font-light text-zinc-600 text-center mb-6">Select all that apply</p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
                     {FEELINGS.map(({ label, emoji }) => {
                       const active = formFeelings.includes(label);
                       return (
@@ -913,7 +915,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
                           className="flex flex-col items-center gap-2 cursor-pointer"
                         >
                           <div
-                            className="w-[118px] h-[118px] rounded-full flex items-center justify-center transition-all duration-200"
+                            className="w-[92px] h-[92px] sm:w-[118px] sm:h-[118px] rounded-full flex items-center justify-center transition-all duration-200"
                             style={active ? {
                               background: 'radial-gradient(circle at 38% 32%, rgba(33,232,255,0.38) 0%, rgba(23,169,201,0.16) 100%)',
                               border: '1.5px solid rgba(33,232,255,0.65)',
@@ -923,9 +925,9 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
                               border: '1px solid rgba(255,255,255,0.07)',
                             }}
                           >
-                            <span className="text-3xl leading-none">{emoji}</span>
+                            <span className="text-2xl sm:text-3xl leading-none">{emoji}</span>
                           </div>
-                          <span className="text-[9px] font-mono transition-colors duration-150" style={{ color: active ? '#21e8ff' : '#71717a' }}>{label}</span>
+                          <span className="text-[8px] sm:text-[9px] font-mono transition-colors duration-150" style={{ color: active ? '#21e8ff' : '#71717a' }}>{label}</span>
                         </motion.button>
                       );
                     })}
@@ -935,9 +937,29 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
                 {/* Section 3 — Notes + Save */}
                 <motion.div
                   variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }}
-                  className="snap-center flex flex-col items-center justify-start pt-16 px-6 w-full max-w-lg mx-auto gap-16"
+                  className="snap-center flex flex-col items-center justify-start pt-16 px-6 w-full max-w-lg mx-auto gap-8"
                   style={{ minHeight: 'calc(100vh - 85px)' }}
                 >
+                  <div className="w-full">
+                    <h2
+                      className="text-[17px] font-light tracking-[0.1em] text-center mb-4"
+                      style={{ color: 'rgba(195, 232, 248, 0.88)', textShadow: '0 0 22px rgba(33,190,255,0.35), 0 0 50px rgba(33,150,220,0.15)', animation: 'float-title 3.5s ease-in-out infinite' }}
+                    >Name your report</h2>
+                    <input
+                      type="text"
+                      value={formName}
+                      onChange={e => setFormName(e.target.value)}
+                      onFocus={() => setNameFocused(true)}
+                      onBlur={() => setNameFocused(false)}
+                      placeholder="Optional — defaults to date and time"
+                      className="w-full rounded-xl px-4 py-3 text-[12px] font-light text-zinc-300 outline-none placeholder:text-zinc-600 transition-all duration-200 text-center"
+                      style={{
+                        background: nameFocused ? 'rgba(23,169,201,0.07)' : 'rgba(23,169,201,0.04)',
+                        border: `1px solid ${nameFocused ? 'rgba(33,232,255,0.35)' : 'rgba(33,232,255,0.12)'}`,
+                        boxShadow: nameFocused ? '0 0 20px rgba(33,232,255,0.1)' : '0 0 12px rgba(33,232,255,0.04)',
+                      }}
+                    />
+                  </div>
                   <div className="w-full">
                     <h2
                       className="text-[17px] font-light tracking-[0.1em] text-center mb-4"
@@ -948,7 +970,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
                       onChange={e => setFormNotes(e.target.value)}
                       onFocus={() => setNotesFocused(true)}
                       onBlur={() => setNotesFocused(false)}
-                      rows={8}
+                      rows={5}
                       placeholder="Optional notes about your session..."
                       className="w-full rounded-xl px-4 py-3 text-[12px] font-light text-zinc-300 outline-none resize-none placeholder:text-zinc-600 transition-all duration-200 text-center"
                       style={{
@@ -999,7 +1021,7 @@ function CircleMetric({ value, unit, sub, label, accent, pulse, tooltip }: Circl
       <motion.div
         whileHover={{ scale: 1.07 }}
         transition={{ type: 'spring', stiffness: 350, damping: 20 }}
-        className="w-[118px] h-[118px] rounded-full flex flex-col items-center justify-center gap-0.5 cursor-default relative group"
+        className="w-[92px] h-[92px] sm:w-[118px] sm:h-[118px] rounded-full flex flex-col items-center justify-center gap-0.5 cursor-default relative group"
         style={{
           background: `radial-gradient(circle at 38% 32%, ${accent}22 0%, ${accent}08 100%)`,
           border: `1px solid ${accent}40`,
@@ -1017,10 +1039,10 @@ function CircleMetric({ value, unit, sub, label, accent, pulse, tooltip }: Circl
         {/* Value — fades out on hover */}
         <div className="flex flex-col items-center gap-0.5 transition-opacity duration-150 group-hover:opacity-0">
           <div className="flex items-baseline gap-0.5 leading-none">
-            <span className="text-[22px] font-light tabular-nums" style={{ color: accent }}>{value}</span>
-            {unit && <span className="text-[11px] font-light" style={{ color: `${accent}90` }}>{unit}</span>}
+            <span className="text-[17px] sm:text-[22px] font-light tabular-nums" style={{ color: accent }}>{value}</span>
+            {unit && <span className="text-[9px] sm:text-[11px] font-light" style={{ color: `${accent}90` }}>{unit}</span>}
           </div>
-          {sub && <span className="text-[10px] font-mono mt-1" style={{ color: `${accent}60` }}>{sub}</span>}
+          {sub && <span className="text-[8px] sm:text-[10px] font-mono mt-1" style={{ color: `${accent}60` }}>{sub}</span>}
         </div>
         {/* Tooltip — fades in on hover */}
         {tooltip && (

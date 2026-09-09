@@ -104,8 +104,14 @@ export default function AuthScreen({ onSignUp, onBack }: Props) {
   return (
     <div className="min-h-screen bg-[#090b0e] text-zinc-100 flex items-center justify-center p-4 lg:p-12 font-sans relative overflow-hidden selection:bg-[#17A9C9]/30 selection:text-white">
 
-      <div className="absolute top-[-10%] right-[-10%] w-[800px] h-[800px] rounded-full bg-[#17A9C9]/10 blur-[160px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] rounded-full bg-violet-600/10 blur-[140px] pointer-events-none" />
+      <div
+        className="absolute top-[-10%] right-[-10%] w-[800px] h-[800px] rounded-full blur-[160px] pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(33,232,255,0.24) 0%, rgba(23,169,201,0.13) 45%, transparent 75%)' }}
+      />
+      <div
+        className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] rounded-full blur-[140px] pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.2) 0%, rgba(139,92,246,0.1) 45%, transparent 75%)' }}
+      />
 
       {onBack && (
         <button
