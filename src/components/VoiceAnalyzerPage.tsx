@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, Mic, Square, Check, Activity, Shuffle } from 'lucide-react';
 import { VocalReport } from '../types/onboarding';
 import { READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS, TWISTER_PHRASES, pickRandomPhrase } from '../lib/recordingPrompts';
+import { ANALYSIS_BUFFER_SIZE, SILENCE_RMS_THRESHOLD, detectPitchFrame, isConfidentPitch, measureFrameRms, measureFrameResonance, calibrateNoiseFloorDb, computeSegmentMetrics, loudnessLevel, loudnessLevelColor, type SegmentMetrics } from '../lib/voiceAnalysis';
 
 interface VoiceAnalyzerPageProps {
   onBack: () => void;
@@ -18,35 +19,6 @@ interface VocalMetrics {
   stabilityPct: number;
   fatigueEstimate: 'Low' | 'Moderate' | 'High';
   fatigueLevel: number;
-}
-
-function detectPitch(buffer: Float32Array, sampleRate: number): number {
-  const SIZE = buffer.length;
-  let rms = 0;
-  for (let i = 0; i < SIZE; i++) rms += buffer[i] * buffer[i];
-  if (Math.sqrt(rms / SIZE) < 0.01) return -1;
-  const c = new Float32Array(SIZE);
-  for (let i = 0; i < SIZE; i++)
-    for (let j = 0; j < SIZE - i; j++) c[i] += buffer[j] * buffer[j + i];
-  let d = 0;
-  while (d < SIZE - 1 && c[d] > c[d + 1]) d++;
-  let maxVal = -1, maxPos = -1;
-  for (let i = d; i < SIZE; i++)
-    if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; }
-  return maxPos > 0 ? sampleRate / maxPos : -1;
-}
-
-function median(arr: number[]): number {
-  if (arr.length === 0) return 0;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
-}
-
-function stddev(arr: number[]): number {
-  if (arr.length < 2) return 0;
-  const m = arr.reduce((s, v) => s + v, 0) / arr.length;
-  return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / arr.length);
 }
 
 // Same 3 steps, in the same order, as the onboarding baseline recorder (BaselineFlow.tsx). Read
@@ -80,71 +52,6 @@ function buildSteps() {
 // Which phrase pool (if any) backs each step's instruction — null for Sustained Vowel, which has
 // no variety to swap between.
 const PHRASE_LISTS_BY_STEP: (string[] | null)[] = [null, TWISTER_PHRASES, READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS];
-
-interface SegmentMetrics {
-  pitchHz: number;
-  pitchRangeHz: number;
-  resonanceScore: number;
-  clarityPct: number;
-  loudnessDb: number;
-  stabilityPct: number;
-}
-
-// Identical to BaselineFlow.tsx's computeSegmentMetrics — same 3-step recording, same per-segment
-// math, same combine weights below, so a voice-analyzer report and the onboarding baseline score
-// an equivalent recording the same way.
-function computeSegmentMetrics(
-  pitchReadings: number[],
-  fftSnapshot: Float32Array | null,
-  timeDomainSnapshot: Float32Array | null,
-  sampleRate: number,
-): SegmentMetrics {
-  const pitchHz = pitchReadings.length > 0 ? Math.round(median(pitchReadings)) : 180;
-  const pitchRangeHz = pitchReadings.length > 1
-    ? Math.round(Math.max(...pitchReadings) - Math.min(...pitchReadings))
-    : 20;
-
-  let resonanceScore = 55;
-  if (fftSnapshot) {
-    const bins = fftSnapshot.length;
-    const hzPerBin = (sampleRate / 2) / bins;
-    let midEnergy = 0, totalEnergy = 0;
-    for (let i = 0; i < bins; i++) {
-      const linear = Math.pow(10, fftSnapshot[i] / 20);
-      const hz = i * hzPerBin;
-      totalEnergy += linear;
-      if (hz >= 1000 && hz <= 4000) midEnergy += linear;
-    }
-    if (totalEnergy > 0) resonanceScore = Math.round(Math.min(100, (midEnergy / totalEnergy) * 500));
-  }
-
-  let clarityPct = 60;
-  if (fftSnapshot) {
-    const bins = fftSnapshot.length;
-    let maxLinear = 0, totalLinear = 0;
-    for (let i = 0; i < bins; i++) {
-      const l = Math.pow(10, fftSnapshot[i] / 20);
-      totalLinear += l;
-      if (l > maxLinear) maxLinear = l;
-    }
-    if (totalLinear > 0) clarityPct = Math.round(Math.min(100, (maxLinear / totalLinear) * 1000));
-  }
-
-  let loudnessDb = -60;
-  if (timeDomainSnapshot) {
-    let rmsSum = 0;
-    for (let i = 0; i < timeDomainSnapshot.length; i++) {
-      rmsSum += timeDomainSnapshot[i] ** 2;
-    }
-    const rms = Math.sqrt(rmsSum / timeDomainSnapshot.length);
-    loudnessDb = rms > 0.0001 ? Math.max(-60, Math.round(20 * Math.log10(rms))) : -60;
-  }
-
-  const jitter = pitchReadings.length > 2 ? stddev(pitchReadings) / (median(pitchReadings) || 1) : 0;
-  const stabilityPct = Math.round(Math.max(0, Math.min(100, (1 - jitter / 0.12) * 100)));
-
-  return { pitchHz, pitchRangeHz, resonanceScore, clarityPct, loudnessDb, stabilityPct };
-}
 
 function noteFromHz(hz: number): string {
   const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -185,7 +92,7 @@ const FEELINGS = [
 
 
 export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageProps) {
-  type AnalyzerPhase = 'record' | 'analyzing' | 'results';
+  type AnalyzerPhase = 'record' | 'analyzing' | 'results' | 'too-quiet';
   type RecordingState = 'idle' | 'recording' | 'done';
 
   const [phase, setPhase] = useState<AnalyzerPhase>('record');
@@ -209,17 +116,23 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
 
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pitchReadings = useRef<number[]>([]);
+  const clarityReadings = useRef<number[]>([]);
+  const loudnessReadings = useRef<number[]>([]);
+  const resonanceReadings = useRef<number[]>([]);
   const lastPitchTime = useRef<number>(0);
+  // Calibrated once, on the first recording of the session, and reused for every subsequent step —
+  // see calibrateNoiseFloorDb. `null` means calibration hasn't run yet.
+  const noiseFloorDbRef = useRef<number | null>(null);
+  const [isCalibrating, setIsCalibrating] = useState(false);
 
   // Per-step captured data — one slot per STEPS entry, combined in computeMetrics() below.
   const allPitchReadings = useRef<number[][]>([[], [], [], []]);
-  const allFftSnapshots = useRef<(Float32Array | null)[]>([null, null, null, null]);
-  const allTimeDomainSnapshots = useRef<(Float32Array | null)[]>([null, null, null, null]);
-  const allSampleRates = useRef<number[]>([44100, 44100, 44100, 44100]);
+  const allClarityReadings = useRef<number[][]>([[], [], [], []]);
+  const allLoudnessReadings = useRef<number[][]>([[], [], [], []]);
+  const allResonanceReadings = useRef<number[][]>([[], [], [], []]);
 
   const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
@@ -237,17 +150,34 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   const startRecording = async () => {
     try {
       pitchReadings.current = [];
+      clarityReadings.current = [];
+      loudnessReadings.current = [];
+      resonanceReadings.current = [];
       lastPitchTime.current = 0;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      // Explicitly disable the browser's mic processing — auto gain control in particular will
+      // actively boost quiet/silent input toward a target loudness, which both defeats the
+      // loudness metric and can amplify ambient noise enough to trip pitch detection.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        video: false,
+      });
       const ctx = new AudioContext();
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048;
+      analyser.fftSize = ANALYSIS_BUFFER_SIZE;
       ctx.createMediaStreamSource(stream).connect(analyser);
 
       mediaStreamRef.current = stream;
       audioContextRef.current = ctx;
-      analyserRef.current = analyser;
+
+      // Calibrate loudness to this specific mic/room once per session (not once per step) —
+      // brief enough that it happens before most people start speaking after tapping record, but
+      // the "Calibrating..." label below gives a clear beat to stay quiet regardless.
+      if (noiseFloorDbRef.current === null) {
+        setIsCalibrating(true);
+        noiseFloorDbRef.current = await calibrateNoiseFloorDb(analyser);
+        setIsCalibrating(false);
+      }
 
       setRecordingState('recording');
       setSeconds(0);
@@ -269,8 +199,19 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
         if (now - lastPitchTime.current > 80) {
           lastPitchTime.current = now;
           analyser.getFloatTimeDomainData(floatBuffer);
-          const pitch = detectPitch(floatBuffer, ctx.sampleRate);
-          if (pitch > 80 && pitch < 1200) pitchReadings.current.push(pitch);
+          const frame = detectPitchFrame(floatBuffer, ctx.sampleRate);
+          if (frame.hz > 0) {
+            clarityReadings.current.push(frame.clarity);
+            if (isConfidentPitch(frame)) pitchReadings.current.push(frame.hz);
+          }
+          // Loudness/resonance are sampled on every signal-present frame across the whole
+          // recording (not just an instant grabbed when recording stops), gated on raw volume
+          // rather than pitch/periodicity so loud unvoiced sounds still count.
+          const rms = measureFrameRms(floatBuffer);
+          if (rms > SILENCE_RMS_THRESHOLD) {
+            loudnessReadings.current.push(rms);
+            resonanceReadings.current.push(measureFrameResonance(floatBuffer, ctx.sampleRate));
+          }
         }
 
         rafRef.current = requestAnimationFrame(loop);
@@ -286,24 +227,12 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     if (recordingState === 'idle') {
       startRecording();
     } else if (recordingState === 'recording') {
-      // Capture FFT + time-domain snapshots BEFORE closing the audio context — same order as
-      // BaselineFlow.tsx's stopRecording().
-      let fftSnapshot: Float32Array | null = null;
-      let timeDomainSnapshot: Float32Array | null = null;
-      let sampleRate = 44100;
-      if (analyserRef.current && audioContextRef.current) {
-        sampleRate = audioContextRef.current.sampleRate;
-        fftSnapshot = new Float32Array(analyserRef.current.frequencyBinCount);
-        analyserRef.current.getFloatFrequencyData(fftSnapshot);
-        timeDomainSnapshot = new Float32Array(analyserRef.current.fftSize);
-        analyserRef.current.getFloatTimeDomainData(timeDomainSnapshot);
-      }
       stopRecording();
 
       allPitchReadings.current[step] = [...pitchReadings.current];
-      allFftSnapshots.current[step] = fftSnapshot;
-      allTimeDomainSnapshots.current[step] = timeDomainSnapshot;
-      allSampleRates.current[step] = sampleRate;
+      allClarityReadings.current[step] = [...clarityReadings.current];
+      allLoudnessReadings.current[step] = [...loudnessReadings.current];
+      allResonanceReadings.current[step] = [...resonanceReadings.current];
       setTotalSeconds(t => t + seconds);
 
       setRecordingState('done');
@@ -314,9 +243,13 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   const handleReRecord = () => {
     stopRecording();
     allPitchReadings.current[step] = [];
-    allFftSnapshots.current[step] = null;
-    allTimeDomainSnapshots.current[step] = null;
+    allClarityReadings.current[step] = [];
+    allLoudnessReadings.current[step] = [];
+    allResonanceReadings.current[step] = [];
     pitchReadings.current = [];
+    clarityReadings.current = [];
+    loudnessReadings.current = [];
+    resonanceReadings.current = [];
     setRecordingState('idle');
     setSeconds(0);
     setBarHeights(new Array(28).fill(0.08));
@@ -325,15 +258,16 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   // Combines the 3 recorded steps into one report — identical per-segment math and combine
   // weights as BaselineFlow.tsx's onboarding baseline, so a voice-analyzer report scores an
   // equivalent recording the same way the baseline does.
-  const computeMetrics = useCallback((): VocalMetrics => {
+  const computeMetrics = useCallback((): { metrics: VocalMetrics; lowSignal: boolean } => {
     const segMetrics = [0, 1, 2, 3].map(i => computeSegmentMetrics(
       allPitchReadings.current[i],
-      allFftSnapshots.current[i],
-      allTimeDomainSnapshots.current[i],
-      allSampleRates.current[i],
+      allClarityReadings.current[i],
+      allLoudnessReadings.current[i],
+      allResonanceReadings.current[i],
+      noiseFloorDbRef.current ?? undefined,
     ));
 
-    const avg = (key: keyof SegmentMetrics) =>
+    const avg = (key: keyof Omit<SegmentMetrics, 'lowSignal'>) =>
       Math.round((segMetrics[0][key] + segMetrics[1][key] + segMetrics[2][key] + segMetrics[3][key]) / 4);
 
     // Stability weighted: vowel most diagnostic (matches BaselineFlow.tsx exactly).
@@ -348,22 +282,33 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     const fatigueLevel = stabilityPct > 70 ? 20 : stabilityPct > 40 ? 55 : 80;
     const fatigueEstimate: 'Low' | 'Moderate' | 'High' = stabilityPct > 70 ? 'Low' : stabilityPct > 40 ? 'Moderate' : 'High';
 
+    // If most of the 4 recorded segments picked up essentially no voice, every metric above is
+    // just noise-floor numbers — show a "too quiet" state instead of a misleadingly precise score.
+    const lowSignal = segMetrics.filter(s => s.lowSignal).length >= 3;
+
     return {
-      pitchHz: avg('pitchHz'),
-      pitchRangeHz: avg('pitchRangeHz'),
-      resonanceScore,
-      clarityPct,
-      loudnessDb: avg('loudnessDb'),
-      stabilityPct,
-      fatigueEstimate,
-      fatigueLevel,
+      metrics: {
+        pitchHz: avg('pitchHz'),
+        pitchRangeHz: avg('pitchRangeHz'),
+        resonanceScore,
+        clarityPct,
+        loudnessDb: avg('loudnessDb'),
+        stabilityPct,
+        fatigueEstimate,
+        fatigueLevel,
+      },
+      lowSignal,
     };
   }, []);
 
   const handleAnalyze = () => {
     setPhase('analyzing');
     setTimeout(() => {
-      const m = computeMetrics();
+      const { metrics: m, lowSignal } = computeMetrics();
+      if (lowSignal) {
+        setPhase('too-quiet');
+        return;
+      }
       setMetrics(m);
       setPhase('results');
     }, 2200);
@@ -390,10 +335,13 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     setTotalSeconds(0);
     setBarHeights(new Array(28).fill(0.08));
     pitchReadings.current = [];
+    clarityReadings.current = [];
+    loudnessReadings.current = [];
+    resonanceReadings.current = [];
     allPitchReadings.current = [[], [], [], []];
-    allFftSnapshots.current = [null, null, null, null];
-    allTimeDomainSnapshots.current = [null, null, null, null];
-    allSampleRates.current = [44100, 44100, 44100, 44100];
+    allClarityReadings.current = [[], [], [], []];
+    allLoudnessReadings.current = [[], [], [], []];
+    allResonanceReadings.current = [[], [], [], []];
   };
 
   // Swaps just the current step's phrase for a different random one from the same pool — lets
@@ -472,7 +420,13 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
       {/* Header */}
       <div className="relative z-10 flex items-center gap-4 px-6 pt-6 pb-4" style={{ borderBottom: '1px solid rgba(33,232,255,0.06)' }}>
         <button
-          onClick={resultsStep === 'log' ? () => setResultsStep('metrics') : onBack}
+          onClick={
+            resultsStep === 'log'
+              ? () => setResultsStep('metrics')
+              : phase === 'results'
+                ? () => { setPhase('record'); setMetrics(null); setResultsStep('metrics'); handleStartOver(); }
+                : onBack
+          }
           className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer"
           style={{ background: 'rgba(23,169,201,0.06)', border: '1px solid rgba(33,232,255,0.15)' }}
         >
@@ -596,11 +550,12 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
               </button>
 
               <p className="text-[11px] font-mono tracking-widest" style={{
-                color: recordingState === 'idle' ? 'rgba(33,232,255,0.5)' : recordingState === 'recording' ? 'rgba(33,232,255,0.7)' : '#71717a'
+                color: isCalibrating ? '#fbbf24' : recordingState === 'idle' ? 'rgba(33,232,255,0.5)' : recordingState === 'recording' ? 'rgba(33,232,255,0.7)' : '#71717a'
               }}>
-                {recordingState === 'idle' && 'TAP TO RECORD'}
-                {recordingState === 'recording' && 'TAP TO STOP'}
-                {recordingState === 'done' && 'RECORDING COMPLETE'}
+                {isCalibrating && 'CALIBRATING MIC — STAY QUIET...'}
+                {!isCalibrating && recordingState === 'idle' && 'TAP TO RECORD'}
+                {!isCalibrating && recordingState === 'recording' && 'TAP TO STOP'}
+                {!isCalibrating && recordingState === 'done' && 'RECORDING COMPLETE'}
               </p>
             </div>
 
@@ -690,6 +645,36 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
           </motion.div>
         )}
 
+        {/* ── PHASE: TOO QUIET — recording had essentially no usable voice signal ── */}
+        {phase === 'too-quiet' && (
+          <motion.div
+            key="too-quiet"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.35 }}
+            className="relative z-10 flex flex-col items-center justify-center gap-6 px-6 py-24 text-center"
+          >
+            <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{ background: 'rgba(251,191,36,0.1)', border: '1.5px solid rgba(251,191,36,0.35)' }}>
+              <Mic className="w-8 h-8 text-amber-400" />
+            </div>
+            <div className="flex flex-col items-center gap-2 max-w-sm">
+              <p className="text-[15px] font-light text-white">We couldn't hear enough to analyze</p>
+              <p className="text-[12px] text-zinc-500 leading-relaxed">
+                Most of that recording was too quiet to measure. Try again a little closer to the
+                mic, and make sure to speak during each step.
+              </p>
+            </div>
+            <button
+              onClick={() => { setPhase('record'); handleStartOver(); }}
+              className="px-8 py-3.5 rounded-2xl text-[11px] font-mono tracking-widest uppercase cursor-pointer transition-all duration-300"
+              style={{ background: 'linear-gradient(135deg, rgba(23,169,201,0.25) 0%, rgba(33,232,255,0.1) 100%)', border: '1px solid rgba(33,232,255,0.5)', color: '#21e8ff', boxShadow: '0 0 28px rgba(33,232,255,0.2)' }}
+            >
+              Try Again
+            </button>
+          </motion.div>
+        )}
+
         {/* ── PHASE: RESULTS — step 1: metrics ── */}
         {phase === 'results' && metrics && resultsStep === 'metrics' && (
           <motion.div
@@ -702,9 +687,11 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
           >
             {/* Vocal Health Index — stacked bar */}
             {(() => {
-              const seg1 = Math.round(metrics.resonanceScore * 0.30);
-              const seg2 = Math.round(metrics.clarityPct * 0.30);
-              const seg3 = Math.round(metrics.fatigueLevel * 0.20);
+              // Segments mirror totalScore's own weights (resonance 40%, clarity 40%, inverted
+              // fatigue 20%) exactly, so the bar always visually sums to the number above it.
+              const seg1 = Math.round(metrics.resonanceScore * 0.4);
+              const seg2 = Math.round(metrics.clarityPct * 0.4);
+              const seg3 = Math.round((100 - metrics.fatigueLevel) * 0.2);
               const reserve = 100 - seg1 - seg2 - seg3;
               const totalScore = Math.round(metrics.resonanceScore * 0.4 + metrics.clarityPct * 0.4 + (100 - metrics.fatigueLevel) * 0.2);
               const fatigueTint = fatigueColor(metrics.fatigueEstimate);
@@ -790,7 +777,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
               <CircleMetric
                 value={`${metrics.pitchHz}`} unit="Hz" sub={noteFromHz(metrics.pitchHz)}
                 label="Pitch" accent="#21e8ff"
-                tooltip="The fundamental note your voice naturally sits at, detected via waveform autocorrelation."
+                tooltip="The fundamental note your voice naturally sits at, detected via pitch tracking."
               />
               <CircleMetric
                 value={`${metrics.pitchRangeHz}`} unit="Hz" sub={pitchRangeLabel(metrics.pitchRangeHz)}
@@ -814,9 +801,9 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
                 tooltip="Estimated from pitch jitter. Low jitter means your pitch held steady — less vocal strain."
               />
               <CircleMetric
-                value={`${metrics.loudnessDb}`} unit="dB" sub="RMS level"
-                label="Loudness" accent="#f97316"
-                tooltip="RMS loudness of your recording in dBFS. Closer to 0 dB is louder; −60 dB is near-silent."
+                value={loudnessLevel(metrics.loudnessDb)} unit="" sub="loudness"
+                label="Loudness" accent={loudnessLevelColor(loudnessLevel(metrics.loudnessDb))}
+                tooltip="How loud you were, calibrated to this session's mic and room."
               />
               <CircleMetric
                 value={`${metrics.stabilityPct}`} unit="%" sub="stability"

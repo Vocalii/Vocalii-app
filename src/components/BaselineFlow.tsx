@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mic, Square, Check, ArrowRight, Shuffle } from 'lucide-react';
 import { READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS, TWISTER_PHRASES, pickRandomPhrase } from '../lib/recordingPrompts';
+import { ANALYSIS_BUFFER_SIZE, SILENCE_RMS_THRESHOLD, detectPitchFrame, isConfidentPitch, measureFrameRms, measureFrameResonance, calibrateNoiseFloorDb, computeSegmentMetrics, type SegmentMetrics } from '../lib/voiceAnalysis';
 
 export interface BaselineMetrics {
   score: number;
@@ -51,117 +52,35 @@ const PHRASE_LISTS_BY_STEP: (string[] | null)[] = [null, TWISTER_PHRASES, READ_A
 
 const BAR_COUNT = 28;
 
-function detectPitch(buffer: Float32Array, sampleRate: number): number {
-  const SIZE = buffer.length;
-  let rms = 0;
-  for (let i = 0; i < SIZE; i++) rms += buffer[i] * buffer[i];
-  if (Math.sqrt(rms / SIZE) < 0.01) return -1;
-  const c = new Float32Array(SIZE);
-  for (let i = 0; i < SIZE; i++)
-    for (let j = 0; j < SIZE - i; j++) c[i] += buffer[j] * buffer[j + i];
-  let d = 0;
-  while (d < SIZE - 1 && c[d] > c[d + 1]) d++;
-  let maxVal = -1, maxPos = -1;
-  for (let i = d; i < SIZE; i++)
-    if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; }
-  return maxPos > 0 ? sampleRate / maxPos : -1;
-}
-
-function median(arr: number[]): number {
-  if (!arr.length) return 0;
-  const s = [...arr].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 === 0 ? (s[m - 1] + s[m]) / 2 : s[m];
-}
-
-function stddev(arr: number[]): number {
-  if (arr.length < 2) return 0;
-  const mean = arr.reduce((s, v) => s + v, 0) / arr.length;
-  return Math.sqrt(arr.reduce((s, v) => s + (v - mean) ** 2, 0) / arr.length);
-}
-
-interface SegmentMetrics {
-  pitchHz: number;
-  pitchRangeHz: number;
-  resonanceScore: number;
-  clarityPct: number;
-  loudnessDb: number;
-  stabilityPct: number;
-}
-
-function computeSegmentMetrics(
-  pitchReadings: number[],
-  fftSnapshot: Float32Array | null,
-  timeDomainSnapshot: Float32Array | null,
-  sampleRate: number,
-): SegmentMetrics {
-  const pitchHz = pitchReadings.length > 0 ? Math.round(median(pitchReadings)) : 180;
-  const pitchRangeHz = pitchReadings.length > 1
-    ? Math.round(Math.max(...pitchReadings) - Math.min(...pitchReadings))
-    : 20;
-
-  let resonanceScore = 55;
-  if (fftSnapshot) {
-    const bins = fftSnapshot.length;
-    const hzPerBin = (sampleRate / 2) / bins;
-    let midEnergy = 0, totalEnergy = 0;
-    for (let i = 0; i < bins; i++) {
-      const linear = Math.pow(10, fftSnapshot[i] / 20);
-      const hz = i * hzPerBin;
-      totalEnergy += linear;
-      if (hz >= 1000 && hz <= 4000) midEnergy += linear;
-    }
-    if (totalEnergy > 0) resonanceScore = Math.round(Math.min(100, (midEnergy / totalEnergy) * 500));
-  }
-
-  let clarityPct = 60;
-  if (fftSnapshot) {
-    const bins = fftSnapshot.length;
-    let maxLinear = 0, totalLinear = 0;
-    for (let i = 0; i < bins; i++) {
-      const l = Math.pow(10, fftSnapshot[i] / 20);
-      totalLinear += l;
-      if (l > maxLinear) maxLinear = l;
-    }
-    if (totalLinear > 0) clarityPct = Math.round(Math.min(100, (maxLinear / totalLinear) * 1000));
-  }
-
-  let loudnessDb = -60;
-  if (timeDomainSnapshot) {
-    let rmsSum = 0;
-    for (let i = 0; i < timeDomainSnapshot.length; i++) {
-      rmsSum += timeDomainSnapshot[i] ** 2;
-    }
-    const rms = Math.sqrt(rmsSum / timeDomainSnapshot.length);
-    loudnessDb = rms > 0.0001 ? Math.max(-60, Math.round(20 * Math.log10(rms))) : -60;
-  }
-
-  const jitter = pitchReadings.length > 2 ? stddev(pitchReadings) / (median(pitchReadings) || 1) : 0;
-  const stabilityPct = Math.round(Math.max(0, Math.min(100, (1 - jitter / 0.12) * 100)));
-
-  return { pitchHz, pitchRangeHz, resonanceScore, clarityPct, loudnessDb, stabilityPct };
-}
-
 export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) {
   const [step, setStep] = useState(0);
   const [steps, setSteps] = useState(buildSteps);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'done'>('idle');
   const [seconds, setSeconds] = useState(0);
   const [barHeights, setBarHeights] = useState<number[]>(new Array(BAR_COUNT).fill(0.06));
+  // True when most of the 4 recorded segments picked up essentially no voice — every metric would
+  // just be noise-floor numbers, so this blocks onComplete() from saving a meaningless baseline.
+  const [lowSignalWarning, setLowSignalWarning] = useState(false);
+  const [isCalibrating, setIsCalibrating] = useState(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pitchReadingsRef = useRef<number[]>([]);
+  const clarityReadingsRef = useRef<number[]>([]);
+  const loudnessReadingsRef = useRef<number[]>([]);
+  const resonanceReadingsRef = useRef<number[]>([]);
   const lastPitchTimeRef = useRef<number>(0);
+  // Calibrated once, on the first recording of the session, and reused for every subsequent step —
+  // see calibrateNoiseFloorDb. `null` means calibration hasn't run yet.
+  const noiseFloorDbRef = useRef<number | null>(null);
 
   // Per-segment captured data — one slot per buildSteps() entry
   const allPitchReadings = useRef<number[][]>([[], [], [], []]);
-  const allFftSnapshots = useRef<(Float32Array | null)[]>([null, null, null, null]);
-  const allTimeDomainSnapshots = useRef<(Float32Array | null)[]>([null, null, null, null]);
-  const allSampleRates = useRef<number[]>([44100, 44100, 44100, 44100]);
+  const allClarityReadings = useRef<number[][]>([[], [], [], []]);
+  const allLoudnessReadings = useRef<number[][]>([[], [], [], []]);
+  const allResonanceReadings = useRef<number[][]>([[], [], [], []]);
 
   const stopAudio = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
@@ -176,15 +95,33 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
   const startRecording = async () => {
     try {
       pitchReadingsRef.current = [];
+      clarityReadingsRef.current = [];
+      loudnessReadingsRef.current = [];
+      resonanceReadingsRef.current = [];
       lastPitchTimeRef.current = 0;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      // Explicitly disable the browser's mic processing — auto gain control in particular will
+      // actively boost quiet/silent input toward a target loudness, which both defeats the
+      // loudness metric and can amplify ambient noise enough to trip pitch detection.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        video: false,
+      });
       const ctx = new AudioContext();
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048;
+      analyser.fftSize = ANALYSIS_BUFFER_SIZE;
       ctx.createMediaStreamSource(stream).connect(analyser);
       streamRef.current = stream;
       audioCtxRef.current = ctx;
-      analyserRef.current = analyser;
+
+      // Calibrate loudness to this specific mic/room once per session (not once per step) — brief
+      // enough that it happens before most people start speaking after tapping record, but the
+      // "Calibrating..." label gives a clear beat to stay quiet regardless.
+      if (noiseFloorDbRef.current === null) {
+        setIsCalibrating(true);
+        noiseFloorDbRef.current = await calibrateNoiseFloorDb(analyser);
+        setIsCalibrating(false);
+      }
+
       setRecordingState('recording');
       setSeconds(0);
       timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
@@ -202,8 +139,16 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
         if (now - lastPitchTimeRef.current > 80) {
           lastPitchTimeRef.current = now;
           analyser.getFloatTimeDomainData(floatBuf);
-          const pitch = detectPitch(floatBuf, ctx.sampleRate);
-          if (pitch > 80 && pitch < 1200) pitchReadingsRef.current.push(pitch);
+          const frame = detectPitchFrame(floatBuf, ctx.sampleRate);
+          if (frame.hz > 0) {
+            clarityReadingsRef.current.push(frame.clarity);
+            if (isConfidentPitch(frame)) pitchReadingsRef.current.push(frame.hz);
+          }
+          const rms = measureFrameRms(floatBuf);
+          if (rms > SILENCE_RMS_THRESHOLD) {
+            loudnessReadingsRef.current.push(rms);
+            resonanceReadingsRef.current.push(measureFrameResonance(floatBuf, ctx.sampleRate));
+          }
         }
         rafRef.current = requestAnimationFrame(loop);
       };
@@ -214,26 +159,13 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
   };
 
   const stopRecording = () => {
-    // Capture FFT + time-domain snapshots BEFORE closing audio context
-    let fftSnapshot: Float32Array | null = null;
-    let timeDomainSnapshot: Float32Array | null = null;
-    let sampleRate = 44100;
-
-    if (analyserRef.current && audioCtxRef.current) {
-      sampleRate = audioCtxRef.current.sampleRate;
-      fftSnapshot = new Float32Array(analyserRef.current.frequencyBinCount);
-      analyserRef.current.getFloatFrequencyData(fftSnapshot);
-      timeDomainSnapshot = new Float32Array(analyserRef.current.fftSize);
-      analyserRef.current.getFloatTimeDomainData(timeDomainSnapshot);
-    }
-
     stopAudio();
 
     // Store per-segment data
     allPitchReadings.current[step] = [...pitchReadingsRef.current];
-    allFftSnapshots.current[step] = fftSnapshot;
-    allTimeDomainSnapshots.current[step] = timeDomainSnapshot;
-    allSampleRates.current[step] = sampleRate;
+    allClarityReadings.current[step] = [...clarityReadingsRef.current];
+    allLoudnessReadings.current[step] = [...loudnessReadingsRef.current];
+    allResonanceReadings.current[step] = [...resonanceReadingsRef.current];
 
     setBarHeights(new Array(BAR_COUNT).fill(0.06));
     setRecordingState('done');
@@ -248,12 +180,20 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
       // Compute all metrics per segment, then combine
       const segMetrics = [0, 1, 2, 3].map(i => computeSegmentMetrics(
         allPitchReadings.current[i],
-        allFftSnapshots.current[i],
-        allTimeDomainSnapshots.current[i],
-        allSampleRates.current[i],
+        allClarityReadings.current[i],
+        allLoudnessReadings.current[i],
+        allResonanceReadings.current[i],
+        noiseFloorDbRef.current ?? undefined,
       ));
 
-      const avg = (key: keyof SegmentMetrics) =>
+      // If most segments picked up essentially no voice, every metric below is meaningless
+      // noise-floor numbers — refuse to save this as the baseline everything else compares against.
+      if (segMetrics.filter(s => s.lowSignal).length >= 3) {
+        setLowSignalWarning(true);
+        return;
+      }
+
+      const avg = (key: keyof Omit<SegmentMetrics, 'lowSignal'>) =>
         Math.round((segMetrics[0][key] + segMetrics[1][key] + segMetrics[2][key] + segMetrics[3][key]) / 4);
 
       // Stability weighted: vowel most diagnostic
@@ -283,9 +223,13 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
   const handleReRecord = () => {
     stopAudio();
     allPitchReadings.current[step] = [];
-    allFftSnapshots.current[step] = null;
-    allTimeDomainSnapshots.current[step] = null;
+    allClarityReadings.current[step] = [];
+    allLoudnessReadings.current[step] = [];
+    allResonanceReadings.current[step] = [];
     pitchReadingsRef.current = [];
+    clarityReadingsRef.current = [];
+    loudnessReadingsRef.current = [];
+    resonanceReadingsRef.current = [];
     setRecordingState('idle');
     setSeconds(0);
     setBarHeights(new Array(BAR_COUNT).fill(0.06));
@@ -296,11 +240,15 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
     setSteps(buildSteps());
     setRecordingState('idle');
     setSeconds(0);
+    setLowSignalWarning(false);
     pitchReadingsRef.current = [];
+    clarityReadingsRef.current = [];
+    loudnessReadingsRef.current = [];
+    resonanceReadingsRef.current = [];
     allPitchReadings.current = [[], [], [], []];
-    allFftSnapshots.current = [null, null, null, null];
-    allTimeDomainSnapshots.current = [null, null, null, null];
-    allSampleRates.current = [44100, 44100, 44100, 44100];
+    allClarityReadings.current = [[], [], [], []];
+    allLoudnessReadings.current = [[], [], [], []];
+    allResonanceReadings.current = [[], [], [], []];
   };
 
   // Swaps just the current step's phrase for a different random one from the same pool — lets
@@ -421,8 +369,10 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
         </AnimatePresence>
       </motion.button>
 
-      <p className="text-[11px] text-zinc-600 tracking-wide">
-        {recordingState === 'idle' ? 'Tap to record' : recordingState === 'recording' ? 'Tap to stop' : 'Recording complete'}
+      <p className={`text-[11px] tracking-wide ${isCalibrating ? '' : 'text-zinc-600'}`} style={isCalibrating ? { color: '#fbbf24' } : undefined}>
+        {isCalibrating
+          ? 'Calibrating mic — stay quiet...'
+          : recordingState === 'idle' ? 'Tap to record' : recordingState === 'recording' ? 'Tap to stop' : 'Recording complete'}
       </p>
 
       {/* Waveform bars — driven by real audio data */}
@@ -458,6 +408,26 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
 
       {/* Actions */}
       <div className="flex flex-col items-center gap-2 w-full mt-1">
+        <AnimatePresence>
+          {lowSignalWarning && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="w-full flex flex-col items-center gap-2 px-4 py-3 rounded-xl text-center"
+              style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)' }}
+            >
+              <p className="text-[11px] text-amber-300 leading-relaxed">
+                We couldn't hear enough across that recording to set a baseline. Try again a little
+                closer to the mic, speaking during each step.
+              </p>
+              <button
+                onClick={handleStartOver}
+                className="text-[11px] text-amber-200 hover:text-white underline underline-offset-2 transition-colors duration-150 cursor-pointer"
+              >
+                Start Over
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <AnimatePresence>
           {recordingState === 'done' && (
             <motion.button

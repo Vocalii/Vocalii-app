@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { type BaselineMetrics } from './BaselineFlow';
+import { loudnessLevel, loudnessLevelColor } from '../lib/voiceAnalysis';
 
 const FEELING_EMOJIS: Record<string, string> = {
   'Hoarseness': '🗣️', 'Dryness': '💧', 'Tension': '😬',
@@ -501,9 +502,11 @@ export default function ReportsPage({
           const r = activeReportDetail.resonanceScore!;
           const c = activeReportDetail.clarityPct!;
           const f = activeReportDetail.fatigueLevel;
-          const seg1 = Math.round(r * 0.30);
-          const seg2 = Math.round(c * 0.30);
-          const seg3 = Math.round(f * 0.20);
+          // Segments mirror totalScore's own weights (resonance 40%, clarity 40%, inverted
+          // fatigue 20%) exactly, so the bar always visually sums to the number above it.
+          const seg1 = Math.round(r * 0.4);
+          const seg2 = Math.round(c * 0.4);
+          const seg3 = Math.round((100 - f) * 0.2);
           const reserve = 100 - seg1 - seg2 - seg3;
           const totalScore = Math.round(r * 0.4 + c * 0.4 + (100 - f) * 0.2);
           const scoreLabel = totalScore >= 80 ? 'Excellent session' : totalScore >= 60 ? 'Strong performance' : totalScore >= 40 ? 'Moderate — room to grow' : 'Recovery recommended';
@@ -592,10 +595,9 @@ export default function ReportsPage({
                 )}
                 {activeReportDetail.loudnessDb !== undefined && (
                   <CircleMetric
-                    value={`${Math.round(activeReportDetail.loudnessDb)}`} unit="dB" sub="loudness"
-                    label="Loudness" accent="#f472b6"
-                    tooltip="Average volume of the session, measured in decibels."
-                    delta={formatDelta(activeReportDetail.loudnessDb, baseline.loudnessDb)}
+                    value={loudnessLevel(activeReportDetail.loudnessDb)} unit="" sub="loudness"
+                    label="Loudness" accent={loudnessLevelColor(loudnessLevel(activeReportDetail.loudnessDb))}
+                    tooltip="How loud you were, calibrated to that session's mic and room."
                   />
                 )}
                 {(() => {
