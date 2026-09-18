@@ -75,6 +75,7 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
   // Calibrated once, on the first recording of the session, and reused for every subsequent step —
   // see calibrateNoiseFloorDb. `null` means calibration hasn't run yet.
   const noiseFloorDbRef = useRef<number | null>(null);
+  const voiceThresholdRmsRef = useRef<number>(SILENCE_RMS_THRESHOLD);
 
   // Per-segment captured data — one slot per buildSteps() entry
   const allPitchReadings = useRef<number[][]>([[], [], [], []]);
@@ -118,7 +119,9 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
       // "Calibrating..." label gives a clear beat to stay quiet regardless.
       if (noiseFloorDbRef.current === null) {
         setIsCalibrating(true);
-        noiseFloorDbRef.current = await calibrateNoiseFloorDb(analyser);
+        const calibration = await calibrateNoiseFloorDb(analyser);
+        noiseFloorDbRef.current = calibration.noiseFloorDb;
+        voiceThresholdRmsRef.current = calibration.voiceThresholdRms;
         setIsCalibrating(false);
       }
 
@@ -145,7 +148,7 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
             if (isConfidentPitch(frame)) pitchReadingsRef.current.push(frame.hz);
           }
           const rms = measureFrameRms(floatBuf);
-          if (rms > SILENCE_RMS_THRESHOLD) {
+          if (rms > voiceThresholdRmsRef.current) {
             loudnessReadingsRef.current.push(rms);
             resonanceReadingsRef.current.push(measureFrameResonance(floatBuf, ctx.sampleRate));
           }

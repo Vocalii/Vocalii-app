@@ -126,6 +126,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   // Calibrated once, on the first recording of the session, and reused for every subsequent step —
   // see calibrateNoiseFloorDb. `null` means calibration hasn't run yet.
   const noiseFloorDbRef = useRef<number | null>(null);
+  const voiceThresholdRmsRef = useRef<number>(SILENCE_RMS_THRESHOLD);
   const [isCalibrating, setIsCalibrating] = useState(false);
 
   // Per-step captured data — one slot per STEPS entry, combined in computeMetrics() below.
@@ -175,7 +176,9 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
       // the "Calibrating..." label below gives a clear beat to stay quiet regardless.
       if (noiseFloorDbRef.current === null) {
         setIsCalibrating(true);
-        noiseFloorDbRef.current = await calibrateNoiseFloorDb(analyser);
+        const calibration = await calibrateNoiseFloorDb(analyser);
+        noiseFloorDbRef.current = calibration.noiseFloorDb;
+        voiceThresholdRmsRef.current = calibration.voiceThresholdRms;
         setIsCalibrating(false);
       }
 
@@ -208,7 +211,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
           // recording (not just an instant grabbed when recording stops), gated on raw volume
           // rather than pitch/periodicity so loud unvoiced sounds still count.
           const rms = measureFrameRms(floatBuffer);
-          if (rms > SILENCE_RMS_THRESHOLD) {
+          if (rms > voiceThresholdRmsRef.current) {
             loudnessReadings.current.push(rms);
             resonanceReadings.current.push(measureFrameResonance(floatBuffer, ctx.sampleRate));
           }

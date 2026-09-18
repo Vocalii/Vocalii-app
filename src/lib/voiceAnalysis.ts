@@ -33,10 +33,22 @@ export const ANALYSIS_BUFFER_SIZE = 2048;
 
 const MIN_PITCH_HZ = 80;
 const MAX_PITCH_HZ = 1200;
-// Shared "is there actually any signal in this frame" gate for loudness/resonance sampling —
-// deliberately independent of pitch/periodicity (unlike `isConfidentPitch`) so loud unvoiced sounds
-// like fricative consonants still count, while true silence/room noise doesn't.
+// Fallback "is there actually any signal in this frame" gate — used only before calibration has
+// run for the session (see calibrateNoiseFloorDb, which computes a per-session replacement). A
+// fixed absolute number here is always wrong for somebody: a phone's much less sensitive mic
+// produces a far quieter raw signal than a laptop's once auto gain control is disabled, so a
+// threshold tuned for a laptop mic can end up requiring the phone practically touch your mouth
+// before it registers anything at all.
 export const SILENCE_RMS_THRESHOLD = 0.01;
+// How many times louder than the calibrated noise floor a frame's RMS must be to count as "signal
+// present" — relative to that session's own floor rather than one fixed number, so it adapts to
+// whatever this specific device's raw sensitivity turns out to be.
+const SIGNAL_ABOVE_FLOOR_MULTIPLIER = 3;
+// Bounds so a bad calibration (e.g. it happened to catch a cough or the click of tapping record
+// instead of true silence) can't produce a threshold that's either always-open or impossible to
+// clear.
+const MIN_VOICE_THRESHOLD_RMS = 0.002;
+const MAX_VOICE_THRESHOLD_RMS = 0.03;
 // Fallback noise floor for the rare case a segment gets scored before calibration ever ran (see
 // calibrateNoiseFloorDb) — a conservative middle-of-the-road guess, not a real reading.
 const DEFAULT_NOISE_FLOOR_DB = -55;
@@ -55,11 +67,12 @@ const LOUD_HEADROOM_DB = 40;
 const PITCH_CLARITY_THRESHOLD = 0.85;
 
 const pitchDetector = PitchDetector.forFloat32Array(ANALYSIS_BUFFER_SIZE);
-// Matches the old detector's RMS<0.01 silence gate. Set as an absolute RMS value rather than via
+// Initial default — matches SILENCE_RMS_THRESHOLD, and gets replaced with a per-session, per-device
+// value once calibrateNoiseFloorDb runs. Set as an absolute RMS value rather than via
 // `minVolumeDecibels` — that setter's dB math is `10 ** (db/10)` (a power-domain formula), not the
 // standard amplitude `20*log10` most people expect, so e.g. -40 there actually computes an
 // absolute threshold of 0.0001, not 0.01, and barely filters anything.
-pitchDetector.minVolumeAbsolute = 0.01;
+pitchDetector.minVolumeAbsolute = SILENCE_RMS_THRESHOLD;
 
 Meyda.bufferSize = ANALYSIS_BUFFER_SIZE;
 
@@ -108,14 +121,22 @@ export function measureFrameResonance(buffer: Float32Array, sampleRate: number):
   return totalEnergy > 0 ? Math.min(100, (midEnergy / totalEnergy) * 500) : 55;
 }
 
+export interface NoiseFloorCalibration {
+  /** Feed to computeSegmentMetrics for that session's loudness rescale. */
+  noiseFloorDb: number;
+  /** Use in place of SILENCE_RMS_THRESHOLD when gating loudness/resonance sampling this session. */
+  voiceThresholdRms: number;
+}
+
 // Samples ambient noise for `durationMs` right as a recording session starts (before the person
-// has begun speaking) and returns the measured noise floor in dBFS, calibrated to *this* mic/room
-// rather than one fixed guess baked into the code. Laptop mics, headsets, and rooms vary enormously
-// in raw gain once the browser's own auto gain control is disabled (see startRecording — AGC has to
-// stay off for accurate pitch/silence detection, but that also means the raw signal is no longer
-// normalized for us). Call this once per session (not once per segment) and reuse the result for
-// every subsequent step's loudness calculation.
-export function calibrateNoiseFloorDb(analyser: AnalyserNode, durationMs = 400): Promise<number> {
+// has begun speaking) and calibrates detection to *this* mic/room rather than one fixed guess baked
+// into the code. Laptop mics, headsets, phones, and rooms vary enormously in raw gain once the
+// browser's own auto gain control is disabled (see startRecording — AGC has to stay off for
+// accurate pitch/silence detection, but that also means the raw signal is no longer normalized for
+// us, and a phone's much less sensitive mic ends up far quieter than a laptop's). As a side effect,
+// this also updates the shared pitch detector's volume gate to match. Call this once per session
+// (not once per segment) and reuse the result for every subsequent step.
+export function calibrateNoiseFloorDb(analyser: AnalyserNode, durationMs = 400): Promise<NoiseFloorCalibration> {
   return new Promise(resolve => {
     const buffer = new Float32Array(analyser.fftSize);
     const samples: number[] = [];
@@ -128,7 +149,15 @@ export function calibrateNoiseFloorDb(analyser: AnalyserNode, durationMs = 400):
       } else {
         const noiseFloorRms = median(samples.length > 0 ? samples : [0]);
         const noiseFloorDb = noiseFloorRms > 0.00001 ? 20 * Math.log10(noiseFloorRms) : MIN_NOISE_FLOOR_DB;
-        resolve(Math.max(MIN_NOISE_FLOOR_DB, Math.min(MAX_NOISE_FLOOR_DB, noiseFloorDb)));
+        const voiceThresholdRms = Math.max(
+          MIN_VOICE_THRESHOLD_RMS,
+          Math.min(MAX_VOICE_THRESHOLD_RMS, noiseFloorRms * SIGNAL_ABOVE_FLOOR_MULTIPLIER),
+        );
+        pitchDetector.minVolumeAbsolute = voiceThresholdRms;
+        resolve({
+          noiseFloorDb: Math.max(MIN_NOISE_FLOOR_DB, Math.min(MAX_NOISE_FLOOR_DB, noiseFloorDb)),
+          voiceThresholdRms,
+        });
       }
     };
     requestAnimationFrame(poll);
@@ -183,9 +212,9 @@ export interface SegmentMetrics {
 // One "segment" = one of the 4 recorded steps (Sustained Vowel / Twisters / Read Aloud / Free
 // Speech). `pitchReadings` are the confident (post `isConfidentPitch`) hz values; `clarityReadings`
 // are every frame's raw clarity value; `loudnessReadings`/`resonanceReadings` are every
-// signal-present (post `SILENCE_RMS_THRESHOLD`) frame's RMS/resonance value — see
-// `measureFrameRms`/`measureFrameResonance`. `noiseFloorDb` comes from `calibrateNoiseFloorDb`,
-// once per session.
+// signal-present (post the session's calibrated voiceThresholdRms, or SILENCE_RMS_THRESHOLD as a
+// fallback) frame's RMS/resonance value — see `measureFrameRms`/`measureFrameResonance`.
+// `noiseFloorDb` comes from `calibrateNoiseFloorDb`, once per session.
 export function computeSegmentMetrics(
   pitchReadings: number[],
   clarityReadings: number[],
