@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, Mic, Square, Check, Activity, Shuffle } from 'lucide-react';
 import { VocalReport } from '../types/onboarding';
 import { READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS, TWISTER_PHRASES, pickRandomPhrase } from '../lib/recordingPrompts';
-import { ANALYSIS_BUFFER_SIZE, SILENCE_RMS_THRESHOLD, detectPitchFrame, isConfidentPitch, measureFrameRms, measureFrameResonance, calibrateNoiseFloorDb, computeSegmentMetrics, loudnessLevel, loudnessLevelColor, type SegmentMetrics } from '../lib/voiceAnalysis';
+import { ANALYSIS_BUFFER_SIZE, SILENCE_RMS_THRESHOLD, detectPitchFrame, isConfidentPitch, measureFrameRms, measureFrameResonance, calibrateInputGain, applyGain, computeSegmentMetrics, loudnessLevel, loudnessLevelColor, type SegmentMetrics } from '../lib/voiceAnalysis';
 
 interface VoiceAnalyzerPageProps {
   onBack: () => void;
@@ -124,9 +124,8 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   const resonanceReadings = useRef<number[]>([]);
   const lastPitchTime = useRef<number>(0);
   // Calibrated once, on the first recording of the session, and reused for every subsequent step —
-  // see calibrateNoiseFloorDb. `null` means calibration hasn't run yet.
-  const noiseFloorDbRef = useRef<number | null>(null);
-  const voiceThresholdRmsRef = useRef<number>(SILENCE_RMS_THRESHOLD);
+  // see calibrateInputGain. `null` means calibration hasn't run yet.
+  const inputGainRef = useRef<number | null>(null);
   const [isCalibrating, setIsCalibrating] = useState(false);
 
   // Per-step captured data — one slot per STEPS entry, combined in computeMetrics() below.
@@ -171,14 +170,12 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
       mediaStreamRef.current = stream;
       audioContextRef.current = ctx;
 
-      // Calibrate loudness to this specific mic/room once per session (not once per step) —
+      // Calibrate input gain to this specific mic/room once per session (not once per step) —
       // brief enough that it happens before most people start speaking after tapping record, but
       // the "Calibrating..." label below gives a clear beat to stay quiet regardless.
-      if (noiseFloorDbRef.current === null) {
+      if (inputGainRef.current === null) {
         setIsCalibrating(true);
-        const calibration = await calibrateNoiseFloorDb(analyser);
-        noiseFloorDbRef.current = calibration.noiseFloorDb;
-        voiceThresholdRmsRef.current = calibration.voiceThresholdRms;
+        inputGainRef.current = await calibrateInputGain(analyser);
         setIsCalibrating(false);
       }
 
@@ -187,21 +184,23 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
 
       timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
 
-      const timeBuffer = new Uint8Array(analyser.fftSize);
       const floatBuffer = new Float32Array(analyser.fftSize);
 
       const loop = (now: number) => {
-        analyser.getByteTimeDomainData(timeBuffer);
+        const gain = inputGainRef.current ?? 1;
+
+        // Waveform display reads every frame (for a smooth 60fps bar animation) — gain-compensated
+        // the same as everything else, or a quiet phone mic barely moves the bars at all.
+        analyser.getFloatTimeDomainData(floatBuffer);
+        applyGain(floatBuffer, gain);
         const heights = new Array(28).fill(0).map((_, i) => {
-          const chunk = Math.floor((timeBuffer.length / 28) * i);
-          const sample = (timeBuffer[chunk] - 128) / 128;
-          return Math.max(0.06, Math.abs(sample) * 2.2 + 0.06);
+          const chunk = Math.floor((floatBuffer.length / 28) * i);
+          return Math.max(0.06, Math.abs(floatBuffer[chunk]) * 2.2 + 0.06);
         });
         setBarHeights(heights);
 
         if (now - lastPitchTime.current > 80) {
           lastPitchTime.current = now;
-          analyser.getFloatTimeDomainData(floatBuffer);
           const frame = detectPitchFrame(floatBuffer, ctx.sampleRate);
           if (frame.hz > 0) {
             clarityReadings.current.push(frame.clarity);
@@ -211,7 +210,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
           // recording (not just an instant grabbed when recording stops), gated on raw volume
           // rather than pitch/periodicity so loud unvoiced sounds still count.
           const rms = measureFrameRms(floatBuffer);
-          if (rms > voiceThresholdRmsRef.current) {
+          if (rms > SILENCE_RMS_THRESHOLD) {
             loudnessReadings.current.push(rms);
             resonanceReadings.current.push(measureFrameResonance(floatBuffer, ctx.sampleRate));
           }
@@ -267,7 +266,6 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
       allClarityReadings.current[i],
       allLoudnessReadings.current[i],
       allResonanceReadings.current[i],
-      noiseFloorDbRef.current ?? undefined,
     ));
 
     const avg = (key: keyof Omit<SegmentMetrics, 'lowSignal'>) =>

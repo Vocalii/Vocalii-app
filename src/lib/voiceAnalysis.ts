@@ -14,11 +14,12 @@
 //     the instant recording stopped — that snapshot could land on a pause (or the click of tapping
 //     "stop") regardless of what the rest of the recording sounded like.
 //   - Loudness: averaged across per-frame RMS readings collected throughout the recording instead
-//     of a single end-of-recording snapshot, then rescaled (not just shifted) from this session's
-//     calibrated noise floor (see calibrateNoiseFloorDb) onto the -60..0 display range — a mic's
-//     raw dynamic range is often much narrower than that once AGC is disabled, so a plain dB
-//     shift/offset would drag quiet speech up right along with the noise floor instead of actually
-//     separating quiet from loud.
+//     of a single end-of-recording snapshot, then rescaled from a fixed reference floor onto the
+//     -60..0 display range. Every raw sample is first put through a per-session calibrated input
+//     gain (see calibrateInputGain) before any of pitch/loudness/resonance/the waveform even look
+//     at it — a phone's mic is far less sensitive than a laptop's once AGC is disabled, so without
+//     this every downstream measurement (and the waveform display itself) stays pinned near zero
+//     unless the mic is held right up against your mouth.
 //   - Stability/fatigue: same jitter formula as before, but fed the new clarity-gated pitch trace
 //     instead of the noisy one, which is where most of the practical accuracy gain comes from.
 //
@@ -33,27 +34,24 @@ export const ANALYSIS_BUFFER_SIZE = 2048;
 
 const MIN_PITCH_HZ = 80;
 const MAX_PITCH_HZ = 1200;
-// Fallback "is there actually any signal in this frame" gate — used only before calibration has
-// run for the session (see calibrateNoiseFloorDb, which computes a per-session replacement). A
-// fixed absolute number here is always wrong for somebody: a phone's much less sensitive mic
-// produces a far quieter raw signal than a laptop's once auto gain control is disabled, so a
-// threshold tuned for a laptop mic can end up requiring the phone practically touch your mouth
-// before it registers anything at all.
+// "Is there actually any signal in this frame" gate for loudness/resonance sampling — deliberately
+// independent of pitch/periodicity (unlike `isConfidentPitch`) so loud unvoiced sounds like
+// fricative consonants still count, while true silence/room noise doesn't. Meaningful as one fixed
+// number precisely because calibrateInputGain normalizes every device's raw signal to the same
+// target level first — this gate never has to adapt to device sensitivity itself.
 export const SILENCE_RMS_THRESHOLD = 0.01;
-// How many times louder than the calibrated noise floor a frame's RMS must be to count as "signal
-// present" — relative to that session's own floor rather than one fixed number, so it adapts to
-// whatever this specific device's raw sensitivity turns out to be.
-const SIGNAL_ABOVE_FLOOR_MULTIPLIER = 3;
-// Bounds so a bad calibration (e.g. it happened to catch a cough or the click of tapping record
-// instead of true silence) can't produce a threshold that's either always-open or impossible to
-// clear.
-const MIN_VOICE_THRESHOLD_RMS = 0.002;
-const MAX_VOICE_THRESHOLD_RMS = 0.03;
-// Fallback noise floor for the rare case a segment gets scored before calibration ever ran (see
-// calibrateNoiseFloorDb) — a conservative middle-of-the-road guess, not a real reading.
-const DEFAULT_NOISE_FLOOR_DB = -55;
-const MIN_NOISE_FLOOR_DB = -70;
-const MAX_NOISE_FLOOR_DB = -30;
+// Where calibrateInputGain aims to put a freshly-measured noise floor once its gain is applied —
+// roughly what a quiet room registers as on a decent, unprocessed laptop mic. Everything else
+// (the fixed SILENCE_RMS_THRESHOLD, the fixed pitch detector volume gate, the loudness rescale
+// below) is calibrated against this same fixed reference, precisely so it only has to be tuned
+// once rather than separately for every device's raw sensitivity.
+const TARGET_NOISE_FLOOR_RMS = 0.006;
+const TARGET_NOISE_FLOOR_DB = 20 * Math.log10(TARGET_NOISE_FLOOR_RMS);
+// Gain is only ever applied upward (a mic that's already loud enough doesn't get attenuated), and
+// capped so a genuinely dead-silent calibration window (e.g. mic muted, or briefly disconnected)
+// can't get amplified into pure noise.
+const MIN_INPUT_GAIN = 1;
+const MAX_INPUT_GAIN = 30;
 // Assumed raw dB range from "just above the noise floor" to "as loud as this mic can usefully
 // register" — the span that gets stretched to fill the whole -60..0 display scale. A plain
 // additive offset (an earlier version of this) preserves whatever raw dB gap already exists
@@ -67,11 +65,12 @@ const LOUD_HEADROOM_DB = 40;
 const PITCH_CLARITY_THRESHOLD = 0.85;
 
 const pitchDetector = PitchDetector.forFloat32Array(ANALYSIS_BUFFER_SIZE);
-// Initial default — matches SILENCE_RMS_THRESHOLD, and gets replaced with a per-session, per-device
-// value once calibrateNoiseFloorDb runs. Set as an absolute RMS value rather than via
-// `minVolumeDecibels` — that setter's dB math is `10 ** (db/10)` (a power-domain formula), not the
-// standard amplitude `20*log10` most people expect, so e.g. -40 there actually computes an
-// absolute threshold of 0.0001, not 0.01, and barely filters anything.
+// Matches SILENCE_RMS_THRESHOLD — meaningful as one fixed value now that calibrateInputGain
+// normalizes every device to the same target level before this ever sees a sample. Set as an
+// absolute RMS value rather than via `minVolumeDecibels` — that setter's dB math is
+// `10 ** (db/10)` (a power-domain formula), not the standard amplitude `20*log10` most people
+// expect, so e.g. -40 there actually computes an absolute threshold of 0.0001, not 0.01, and barely
+// filters anything.
 pitchDetector.minVolumeAbsolute = SILENCE_RMS_THRESHOLD;
 
 Meyda.bufferSize = ANALYSIS_BUFFER_SIZE;
@@ -94,6 +93,17 @@ export function detectPitchFrame(buffer: Float32Array, sampleRate: number): Pitc
 // should pull clarity down, not just get silently excluded).
 export function isConfidentPitch(frame: PitchFrame): boolean {
   return frame.clarity >= PITCH_CLARITY_THRESHOLD && frame.hz >= MIN_PITCH_HZ && frame.hz <= MAX_PITCH_HZ;
+}
+
+// Multiplies every sample in `buffer` by `gain` in place, clamped to the valid [-1, 1] range —
+// apply this immediately after every raw read (pitch, RMS, resonance, and the waveform display
+// alike) so all of them see the same calibrated signal rather than each trying to separately
+// compensate for a quiet mic.
+export function applyGain(buffer: Float32Array, gain: number): void {
+  if (gain === 1) return;
+  for (let i = 0; i < buffer.length; i++) {
+    buffer[i] = Math.max(-1, Math.min(1, buffer[i] * gain));
+  }
 }
 
 // Real-time single-frame RMS read — call once per animation-frame tick during recording (same
@@ -121,22 +131,16 @@ export function measureFrameResonance(buffer: Float32Array, sampleRate: number):
   return totalEnergy > 0 ? Math.min(100, (midEnergy / totalEnergy) * 500) : 55;
 }
 
-export interface NoiseFloorCalibration {
-  /** Feed to computeSegmentMetrics for that session's loudness rescale. */
-  noiseFloorDb: number;
-  /** Use in place of SILENCE_RMS_THRESHOLD when gating loudness/resonance sampling this session. */
-  voiceThresholdRms: number;
-}
-
 // Samples ambient noise for `durationMs` right as a recording session starts (before the person
-// has begun speaking) and calibrates detection to *this* mic/room rather than one fixed guess baked
-// into the code. Laptop mics, headsets, phones, and rooms vary enormously in raw gain once the
-// browser's own auto gain control is disabled (see startRecording — AGC has to stay off for
-// accurate pitch/silence detection, but that also means the raw signal is no longer normalized for
-// us, and a phone's much less sensitive mic ends up far quieter than a laptop's). As a side effect,
-// this also updates the shared pitch detector's volume gate to match. Call this once per session
-// (not once per segment) and reuse the result for every subsequent step.
-export function calibrateNoiseFloorDb(analyser: AnalyserNode, durationMs = 400): Promise<NoiseFloorCalibration> {
+// has begun speaking) and computes a gain factor to bring *this* mic/room up to the same reference
+// level (TARGET_NOISE_FLOOR_RMS) everything else in this module assumes. Laptop mics, headsets,
+// phones, and rooms vary enormously in raw gain once the browser's own auto gain control is
+// disabled (see startRecording — AGC has to stay off for accurate pitch/silence detection, but that
+// also means the raw signal is no longer normalized for us, and a phone's much less sensitive mic
+// ends up far quieter than a laptop's). Call this once per session (not once per segment), then run
+// every subsequent raw read through `applyGain` before using it for anything — pitch, loudness,
+// resonance, and the waveform display alike.
+export function calibrateInputGain(analyser: AnalyserNode, durationMs = 400): Promise<number> {
   return new Promise(resolve => {
     const buffer = new Float32Array(analyser.fftSize);
     const samples: number[] = [];
@@ -148,16 +152,8 @@ export function calibrateNoiseFloorDb(analyser: AnalyserNode, durationMs = 400):
         requestAnimationFrame(poll);
       } else {
         const noiseFloorRms = median(samples.length > 0 ? samples : [0]);
-        const noiseFloorDb = noiseFloorRms > 0.00001 ? 20 * Math.log10(noiseFloorRms) : MIN_NOISE_FLOOR_DB;
-        const voiceThresholdRms = Math.max(
-          MIN_VOICE_THRESHOLD_RMS,
-          Math.min(MAX_VOICE_THRESHOLD_RMS, noiseFloorRms * SIGNAL_ABOVE_FLOOR_MULTIPLIER),
-        );
-        pitchDetector.minVolumeAbsolute = voiceThresholdRms;
-        resolve({
-          noiseFloorDb: Math.max(MIN_NOISE_FLOOR_DB, Math.min(MAX_NOISE_FLOOR_DB, noiseFloorDb)),
-          voiceThresholdRms,
-        });
+        const gain = TARGET_NOISE_FLOOR_RMS / Math.max(noiseFloorRms, 0.0001);
+        resolve(Math.max(MIN_INPUT_GAIN, Math.min(MAX_INPUT_GAIN, gain)));
       }
     };
     requestAnimationFrame(poll);
@@ -212,15 +208,14 @@ export interface SegmentMetrics {
 // One "segment" = one of the 4 recorded steps (Sustained Vowel / Twisters / Read Aloud / Free
 // Speech). `pitchReadings` are the confident (post `isConfidentPitch`) hz values; `clarityReadings`
 // are every frame's raw clarity value; `loudnessReadings`/`resonanceReadings` are every
-// signal-present (post the session's calibrated voiceThresholdRms, or SILENCE_RMS_THRESHOLD as a
-// fallback) frame's RMS/resonance value — see `measureFrameRms`/`measureFrameResonance`.
-// `noiseFloorDb` comes from `calibrateNoiseFloorDb`, once per session.
+// signal-present (post SILENCE_RMS_THRESHOLD) frame's RMS/resonance value — see
+// `measureFrameRms`/`measureFrameResonance`. All of these assume every raw sample already passed
+// through `applyGain` with this session's `calibrateInputGain` result before reaching here.
 export function computeSegmentMetrics(
   pitchReadings: number[],
   clarityReadings: number[],
   loudnessReadings: number[],
   resonanceReadings: number[],
-  noiseFloorDb: number = DEFAULT_NOISE_FLOOR_DB,
 ): SegmentMetrics {
   const pitchHz = pitchReadings.length > 0 ? Math.round(median(pitchReadings)) : 180;
   const pitchRangeHz = pitchReadings.length > 1
@@ -245,10 +240,11 @@ export function computeSegmentMetrics(
       // needed so this measurement reflects true input level rather than the browser normalizing
       // it), most mics never get anywhere near full scale even when shouting into them, and the
       // usable raw dB gap between quiet and loud speech is often narrow to begin with. Rescale
-      // (not just shift) the span from this session's calibrated noise floor up through
-      // LOUD_HEADROOM_DB onto the full -60..0 display range, so quiet and loud speech actually
-      // spread apart instead of both landing near the top.
-      const normalized = (rawDb - noiseFloorDb) / LOUD_HEADROOM_DB;
+      // (not just shift) the span from the fixed reference floor (TARGET_NOISE_FLOOR_DB — every
+      // device's raw signal already got gain-normalized to sit near this, see calibrateInputGain)
+      // up through LOUD_HEADROOM_DB onto the full -60..0 display range, so quiet and loud speech
+      // actually spread apart instead of both landing near the top.
+      const normalized = (rawDb - TARGET_NOISE_FLOOR_DB) / LOUD_HEADROOM_DB;
       loudnessDb = Math.round(Math.max(-60, Math.min(0, normalized * 60 - 60)));
     }
   }

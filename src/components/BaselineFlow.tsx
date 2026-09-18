@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mic, Square, Check, ArrowRight, Shuffle } from 'lucide-react';
 import { READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS, TWISTER_PHRASES, pickRandomPhrase } from '../lib/recordingPrompts';
-import { ANALYSIS_BUFFER_SIZE, SILENCE_RMS_THRESHOLD, detectPitchFrame, isConfidentPitch, measureFrameRms, measureFrameResonance, calibrateNoiseFloorDb, computeSegmentMetrics, type SegmentMetrics } from '../lib/voiceAnalysis';
+import { ANALYSIS_BUFFER_SIZE, SILENCE_RMS_THRESHOLD, detectPitchFrame, isConfidentPitch, measureFrameRms, measureFrameResonance, calibrateInputGain, applyGain, computeSegmentMetrics, type SegmentMetrics } from '../lib/voiceAnalysis';
 
 export interface BaselineMetrics {
   score: number;
@@ -73,9 +73,8 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
   const resonanceReadingsRef = useRef<number[]>([]);
   const lastPitchTimeRef = useRef<number>(0);
   // Calibrated once, on the first recording of the session, and reused for every subsequent step —
-  // see calibrateNoiseFloorDb. `null` means calibration hasn't run yet.
-  const noiseFloorDbRef = useRef<number | null>(null);
-  const voiceThresholdRmsRef = useRef<number>(SILENCE_RMS_THRESHOLD);
+  // see calibrateInputGain. `null` means calibration hasn't run yet.
+  const inputGainRef = useRef<number | null>(null);
 
   // Per-segment captured data — one slot per buildSteps() entry
   const allPitchReadings = useRef<number[][]>([[], [], [], []]);
@@ -114,41 +113,41 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
       streamRef.current = stream;
       audioCtxRef.current = ctx;
 
-      // Calibrate loudness to this specific mic/room once per session (not once per step) — brief
-      // enough that it happens before most people start speaking after tapping record, but the
-      // "Calibrating..." label gives a clear beat to stay quiet regardless.
-      if (noiseFloorDbRef.current === null) {
+      // Calibrate input gain to this specific mic/room once per session (not once per step) —
+      // brief enough that it happens before most people start speaking after tapping record, but
+      // the "Calibrating..." label gives a clear beat to stay quiet regardless.
+      if (inputGainRef.current === null) {
         setIsCalibrating(true);
-        const calibration = await calibrateNoiseFloorDb(analyser);
-        noiseFloorDbRef.current = calibration.noiseFloorDb;
-        voiceThresholdRmsRef.current = calibration.voiceThresholdRms;
+        inputGainRef.current = await calibrateInputGain(analyser);
         setIsCalibrating(false);
       }
 
       setRecordingState('recording');
       setSeconds(0);
       timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
-      const timeBuf = new Uint8Array(analyser.fftSize);
       const floatBuf = new Float32Array(analyser.fftSize);
       const loop = (now: number) => {
-        analyser.getByteTimeDomainData(timeBuf);
+        const gain = inputGainRef.current ?? 1;
+
+        // Waveform display reads every frame (for a smooth 60fps bar animation) — gain-compensated
+        // the same as everything else, or a quiet phone mic barely moves the bars at all.
+        analyser.getFloatTimeDomainData(floatBuf);
+        applyGain(floatBuf, gain);
         const heights = new Array(BAR_COUNT).fill(0).map((_, i) => {
-          const chunk = Math.floor((timeBuf.length / BAR_COUNT) * i);
-          const sample = (timeBuf[chunk] - 128) / 128;
-          return Math.max(0.06, Math.abs(sample) * 2.2 + 0.06);
+          const chunk = Math.floor((floatBuf.length / BAR_COUNT) * i);
+          return Math.max(0.06, Math.abs(floatBuf[chunk]) * 2.2 + 0.06);
         });
         setBarHeights(heights);
 
         if (now - lastPitchTimeRef.current > 80) {
           lastPitchTimeRef.current = now;
-          analyser.getFloatTimeDomainData(floatBuf);
           const frame = detectPitchFrame(floatBuf, ctx.sampleRate);
           if (frame.hz > 0) {
             clarityReadingsRef.current.push(frame.clarity);
             if (isConfidentPitch(frame)) pitchReadingsRef.current.push(frame.hz);
           }
           const rms = measureFrameRms(floatBuf);
-          if (rms > voiceThresholdRmsRef.current) {
+          if (rms > SILENCE_RMS_THRESHOLD) {
             loudnessReadingsRef.current.push(rms);
             resonanceReadingsRef.current.push(measureFrameResonance(floatBuf, ctx.sampleRate));
           }
@@ -186,7 +185,6 @@ export default function BaselineFlow({ onComplete, onSkip }: BaselineFlowProps) 
         allClarityReadings.current[i],
         allLoudnessReadings.current[i],
         allResonanceReadings.current[i],
-        noiseFloorDbRef.current ?? undefined,
       ));
 
       // If most segments picked up essentially no voice, every metric below is meaningless
