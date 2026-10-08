@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { type BaselineMetrics } from './BaselineFlow';
 import { loudnessLevel, loudnessLevelColor } from '../lib/voiceAnalysis';
+import { EXERCISE_RITUALS } from '../ritualsData';
 
 const FEELING_EMOJIS: Record<string, string> = {
   'Hoarseness': '🗣️', 'Dryness': '💧', 'Tension': '😬',
@@ -60,6 +61,7 @@ function CircleMetric({ value, unit, sub, label, accent, tooltip, delta }: { val
   );
 }
 import VoiceAnalyzerPage from './VoiceAnalyzerPage';
+import SectionCard from './SectionCard';
 import {
   Trash2,
   ChevronRight,
@@ -94,6 +96,8 @@ interface ReportsPageProps {
   onToggleFavourite: (id: string) => void;
   onSetBaseline: (metrics: BaselineMetrics) => void;
   baseline: ReportBaseline;
+  todayVocalEffort?: number | null;
+  todayVocalConfidence?: number | null;
 }
 
 export default function ReportsPage({
@@ -104,6 +108,8 @@ export default function ReportsPage({
   onToggleFavourite,
   onSetBaseline,
   baseline,
+  todayVocalEffort,
+  todayVocalConfidence,
 }: ReportsPageProps) {
   const [showAnalyzer, setShowAnalyzer] = useState(false);
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
@@ -418,7 +424,7 @@ export default function ReportsPage({
                 </button>
               </div>
             ) : (
-              <div className="flex items-start gap-2 mb-1.5">
+              <div className="flex items-center gap-3 mb-1.5">
                 <h1 className="text-[19px] sm:text-[28px] font-extralight tracking-wide text-white">
                   {activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`}
                 </h1>
@@ -498,131 +504,177 @@ export default function ReportsPage({
           </div>
         </div>
 
-        {(activeReportDetail.resonanceScore !== undefined && activeReportDetail.clarityPct !== undefined) && (() => {
-          const r = activeReportDetail.resonanceScore!;
-          const c = activeReportDetail.clarityPct!;
-          const f = activeReportDetail.fatigueLevel;
-          // Segments mirror totalScore's own weights (resonance 40%, clarity 40%, inverted
-          // fatigue 20%) exactly, so the bar always visually sums to the number above it.
-          const seg1 = Math.round(r * 0.4);
-          const seg2 = Math.round(c * 0.4);
-          const seg3 = Math.round((100 - f) * 0.2);
-          const reserve = 100 - seg1 - seg2 - seg3;
-          const totalScore = Math.round(r * 0.4 + c * 0.4 + (100 - f) * 0.2);
-          const scoreLabel = totalScore >= 80 ? 'Excellent session' : totalScore >= 60 ? 'Strong performance' : totalScore >= 40 ? 'Moderate — room to grow' : 'Recovery recommended';
-          const fatigueTint = f <= 33 ? '#22d3ee' : f <= 66 ? '#fbbf24' : '#fb7185';
-          return (
-            <div className="w-full max-w-5xl mb-8 flex flex-col gap-4">
-              <div className="flex items-center justify-between w-full">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[9px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.45)' }}>Vocal Profile</span>
-                  <span className="text-[11px] font-light text-zinc-400">{scoreLabel}</span>
+        {activeReportDetail.sections ? (
+          <div className="grid grid-cols-2 gap-4 sm:gap-5 mb-8 w-full max-w-5xl">
+            <SectionCard
+              label="Sustained Vowel" accent="#21e8ff"
+              primary={activeReportDetail.sections.sustainedVowel.pass ? 'Pass' : 'Needs retry'}
+              detail={activeReportDetail.sections.sustainedVowel.reasonIfFailed ?? 'Clear, usable recording'}
+            />
+            <SectionCard
+              label="Tongue Twisters" accent="#a78bfa"
+              primary={`${activeReportDetail.sections.tongueTwisters.wpm} WPM`}
+              detail={`${activeReportDetail.sections.tongueTwisters.accuracyPct}% accuracy`}
+              attempts={activeReportDetail.sections.tongueTwisters.attempts?.map(a => ({ prompt: a.prompt, score: `${a.accuracyPct}% · ${a.wpm} WPM` }))}
+            />
+            <SectionCard
+              label="Read Aloud" accent="#fbbf24"
+              primary={`${activeReportDetail.sections.readAloud.wpm} WPM`}
+              detail={`${activeReportDetail.sections.readAloud.matchPct}% match`}
+              attempts={activeReportDetail.sections.readAloud.attempts?.map(a => ({ prompt: a.prompt, score: `${a.matchPct}% · ${a.wpm} WPM` }))}
+            />
+            <SectionCard
+              label="Free Speech" accent="#34d399"
+              primary={`${activeReportDetail.sections.freeSpeech.wpm} WPM`}
+              detail={`${activeReportDetail.sections.freeSpeech.wordCount} words`}
+            />
+          </div>
+        ) : (
+          <>
+            {(activeReportDetail.resonanceScore !== undefined && activeReportDetail.clarityPct !== undefined) && (() => {
+              const r = activeReportDetail.resonanceScore!;
+              const c = activeReportDetail.clarityPct!;
+              const f = activeReportDetail.fatigueLevel;
+              // Segments mirror totalScore's own weights (resonance 40%, clarity 40%, inverted
+              // fatigue 20%) exactly, so the bar always visually sums to the number above it.
+              const seg1 = Math.round(r * 0.4);
+              const seg2 = Math.round(c * 0.4);
+              const seg3 = Math.round((100 - f) * 0.2);
+              const reserve = 100 - seg1 - seg2 - seg3;
+              const totalScore = Math.round(r * 0.4 + c * 0.4 + (100 - f) * 0.2);
+              const scoreLabel = totalScore >= 80 ? 'Excellent session' : totalScore >= 60 ? 'Strong performance' : totalScore >= 40 ? 'Moderate — room to grow' : 'Recovery recommended';
+              const fatigueTint = f <= 33 ? '#22d3ee' : f <= 66 ? '#fbbf24' : '#fb7185';
+              return (
+                <div className="w-full max-w-5xl mb-8 flex flex-col gap-4">
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[9px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.45)' }}>Vocal Profile</span>
+                      <span className="text-[11px] font-light text-zinc-400">{scoreLabel}</span>
+                    </div>
+                    <div className="flex items-end gap-1.5 leading-none">
+                      <motion.span
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ type: 'spring', stiffness: 200, damping: 18, delay: 0.1 }}
+                        className="text-[24px] font-light text-white tabular-nums"
+                        style={{ lineHeight: 1 }}
+                      >{totalScore}</motion.span>
+                      <span className="text-[11px] font-mono text-zinc-600 mb-1">/ 100</span>
+                    </div>
+                  </div>
+                  <div className="w-full relative">
+                    <div className="absolute inset-x-0 -bottom-1.5 h-4 rounded-full blur-lg opacity-25 pointer-events-none" style={{ background: `linear-gradient(90deg, #fbbf24 0%, #34d399 50%, ${fatigueTint} 100%)` }} />
+                    <div className="relative w-full h-5 rounded-xl flex overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)' }}>
+                      <motion.div initial={{ width: 0 }} animate={{ width: `${seg1}%` }} transition={{ duration: 1.0, delay: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }} style={{ background: 'linear-gradient(90deg, #d97706, #fbbf24)', flexShrink: 0 }} className="h-full" />
+                      <motion.div initial={{ width: 0 }} animate={{ width: `${seg2}%` }} transition={{ duration: 1.0, delay: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }} style={{ background: 'linear-gradient(90deg, #059669, #34d399)', borderLeft: '1px solid rgba(0,0,0,0.18)', flexShrink: 0 }} className="h-full" />
+                      <motion.div initial={{ width: 0 }} animate={{ width: `${seg3}%` }} transition={{ duration: 1.0, delay: 0.7, ease: [0.25, 0.46, 0.45, 0.94] }} style={{ background: `linear-gradient(90deg, ${fatigueTint}88, ${fatigueTint})`, borderLeft: '1px solid rgba(0,0,0,0.18)', flexShrink: 0 }} className="h-full" />
+                      <div style={{ flexGrow: 1, borderLeft: reserve > 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }} className="h-full" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-5">
+                    <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#fbbf24' }} /><span className="text-[9px] font-mono tracking-wide text-zinc-500">Resonance</span></div>
+                    <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#34d399' }} /><span className="text-[9px] font-mono tracking-wide text-zinc-500">Clarity</span></div>
+                    <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: fatigueTint }} /><span className="text-[9px] font-mono tracking-wide text-zinc-500">Fatigue</span></div>
+                  </div>
                 </div>
-                <div className="flex items-end gap-1.5 leading-none">
-                  <motion.span
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ type: 'spring', stiffness: 200, damping: 18, delay: 0.1 }}
-                    className="text-[24px] font-light text-white tabular-nums"
-                    style={{ lineHeight: 1 }}
-                  >{totalScore}</motion.span>
-                  <span className="text-[11px] font-mono text-zinc-600 mb-1">/ 100</span>
-                </div>
-              </div>
-              <div className="w-full relative">
-                <div className="absolute inset-x-0 -bottom-1.5 h-4 rounded-full blur-lg opacity-25 pointer-events-none" style={{ background: `linear-gradient(90deg, #fbbf24 0%, #34d399 50%, ${fatigueTint} 100%)` }} />
-                <div className="relative w-full h-5 rounded-xl flex overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)' }}>
-                  <motion.div initial={{ width: 0 }} animate={{ width: `${seg1}%` }} transition={{ duration: 1.0, delay: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }} style={{ background: 'linear-gradient(90deg, #d97706, #fbbf24)', flexShrink: 0 }} className="h-full" />
-                  <motion.div initial={{ width: 0 }} animate={{ width: `${seg2}%` }} transition={{ duration: 1.0, delay: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }} style={{ background: 'linear-gradient(90deg, #059669, #34d399)', borderLeft: '1px solid rgba(0,0,0,0.18)', flexShrink: 0 }} className="h-full" />
-                  <motion.div initial={{ width: 0 }} animate={{ width: `${seg3}%` }} transition={{ duration: 1.0, delay: 0.7, ease: [0.25, 0.46, 0.45, 0.94] }} style={{ background: `linear-gradient(90deg, ${fatigueTint}88, ${fatigueTint})`, borderLeft: '1px solid rgba(0,0,0,0.18)', flexShrink: 0 }} className="h-full" />
-                  <div style={{ flexGrow: 1, borderLeft: reserve > 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }} className="h-full" />
-                </div>
-              </div>
-              <div className="flex items-center gap-5">
-                <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#fbbf24' }} /><span className="text-[9px] font-mono tracking-wide text-zinc-500">Resonance</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#34d399' }} /><span className="text-[9px] font-mono tracking-wide text-zinc-500">Clarity</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: fatigueTint }} /><span className="text-[9px] font-mono tracking-wide text-zinc-500">Fatigue</span></div>
-              </div>
-            </div>
-          );
-        })()}
+              );
+            })()}
 
-        {(activeReportDetail.pitchHz || activeReportDetail.resonanceScore !== undefined || activeReportDetail.clarityPct !== undefined
-          || activeReportDetail.stabilityPct !== undefined || activeReportDetail.loudnessDb !== undefined) && (
-            <>
-              <div className="flex flex-wrap justify-center sm:justify-start gap-4 sm:gap-5 mb-8 py-2">
-                {activeReportDetail.pitchHz && (
-                  <CircleMetric
-                    value={`${Math.round(activeReportDetail.pitchHz)}`} unit="Hz"
-                    sub={noteFromHz(activeReportDetail.pitchHz)}
-                    label="Pitch" accent="#21e8ff"
-                    tooltip="The fundamental note your voice naturally sits at, detected via waveform autocorrelation."
-                    delta={formatDelta(activeReportDetail.pitchHz, baseline.pitchHz)}
-                  />
-                )}
-                {activeReportDetail.pitchRangeHz && (
-                  <CircleMetric
-                    value={`${Math.round(activeReportDetail.pitchRangeHz)}`} unit="Hz"
-                    sub={activeReportDetail.pitchRangeHz < 40 ? 'Narrow' : activeReportDetail.pitchRangeHz < 120 ? 'Moderate' : 'Wide'}
-                    label="Range" accent="#a78bfa"
-                    tooltip="How much your pitch varied. A wider range means more expressive, dynamic delivery."
-                    delta={formatDelta(activeReportDetail.pitchRangeHz, baseline.pitchRangeHz)}
-                  />
-                )}
-                {activeReportDetail.resonanceScore !== undefined && (
-                  <CircleMetric
-                    value={`${Math.round(activeReportDetail.resonanceScore)}`} unit="" sub="/ 100"
-                    label="Resonance" accent="#fbbf24"
-                    tooltip="Energy in the 1–4 kHz presence band. Higher = fuller, more projected sound."
-                    delta={formatDelta(activeReportDetail.resonanceScore, baseline.resonanceScore)}
-                  />
-                )}
-                {activeReportDetail.clarityPct !== undefined && (
-                  <CircleMetric
-                    value={`${Math.round(activeReportDetail.clarityPct)}`} unit="%" sub="clarity"
-                    label="Clarity" accent="#34d399"
-                    tooltip="Dominant frequency vs. total spectral noise. Higher = cleaner, more focused tone."
-                    delta={formatDelta(activeReportDetail.clarityPct, baseline.clarityPct)}
-                  />
-                )}
-                {activeReportDetail.stabilityPct !== undefined && (
-                  <CircleMetric
-                    value={`${Math.round(activeReportDetail.stabilityPct)}`} unit="%" sub="stability"
-                    label="Stability" accent="#22d3ee"
-                    tooltip="How steady your pitch held over the session. Higher = fewer wavers or breaks."
-                    delta={formatDelta(activeReportDetail.stabilityPct, baseline.stabilityPct)}
-                  />
-                )}
-                {activeReportDetail.loudnessDb !== undefined && (
-                  <CircleMetric
-                    value={loudnessLevel(activeReportDetail.loudnessDb)} unit="" sub="loudness"
-                    label="Loudness" accent={loudnessLevelColor(loudnessLevel(activeReportDetail.loudnessDb))}
-                    tooltip="How loud you were, calibrated to that session's mic and room."
-                  />
-                )}
-                {(() => {
-                  const f = activeReportDetail.fatigueLevel;
-                  const estimate = f <= 33 ? 'Low' : f <= 66 ? 'Moderate' : 'High';
-                  const accent = f <= 33 ? '#22d3ee' : f <= 66 ? '#fbbf24' : '#fb7185';
-                  return (
+            {(activeReportDetail.pitchHz || activeReportDetail.resonanceScore !== undefined || activeReportDetail.clarityPct !== undefined
+              || activeReportDetail.stabilityPct !== undefined || activeReportDetail.loudnessDb !== undefined) && (
+                <div className="flex flex-wrap justify-center sm:justify-start gap-4 sm:gap-5 mb-8 py-2">
+                  {activeReportDetail.pitchHz && (
                     <CircleMetric
-                      value={estimate} unit="" sub="fatigue"
-                      label="Energy" accent={accent}
-                      tooltip="Estimated from pitch jitter. Low jitter means your pitch held steady — less vocal strain."
+                      value={`${Math.round(activeReportDetail.pitchHz)}`} unit="Hz"
+                      sub={noteFromHz(activeReportDetail.pitchHz)}
+                      label="Pitch" accent="#21e8ff"
+                      tooltip="The fundamental note your voice naturally sits at, detected via waveform autocorrelation."
+                      delta={formatDelta(activeReportDetail.pitchHz, baseline.pitchHz)}
                     />
-                  );
-                })()}
-              </div>
-
-              {activeReportDetail.insight && (
-                <div className="relative flex flex-col gap-3 py-7 px-6 mb-8">
-                  <div className="absolute inset-0 rounded-3xl pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(23,169,201,0.1) 0%, rgba(33,232,255,0.04) 55%, transparent 100%)' }} />
-                  <p className="text-[9px] font-mono tracking-widest uppercase text-center sm:text-left" style={{ color: 'rgba(33,232,255,0.6)' }}>AI Insight</p>
-                  <p className="text-[14px] font-light text-zinc-200 leading-relaxed text-center sm:text-left">{activeReportDetail.insight}</p>
+                  )}
+                  {activeReportDetail.pitchRangeHz && (
+                    <CircleMetric
+                      value={`${Math.round(activeReportDetail.pitchRangeHz)}`} unit="Hz"
+                      sub={activeReportDetail.pitchRangeHz < 40 ? 'Narrow' : activeReportDetail.pitchRangeHz < 120 ? 'Moderate' : 'Wide'}
+                      label="Range" accent="#a78bfa"
+                      tooltip="How much your pitch varied. A wider range means more expressive, dynamic delivery."
+                      delta={formatDelta(activeReportDetail.pitchRangeHz, baseline.pitchRangeHz)}
+                    />
+                  )}
+                  {activeReportDetail.resonanceScore !== undefined && (
+                    <CircleMetric
+                      value={`${Math.round(activeReportDetail.resonanceScore)}`} unit="" sub="/ 100"
+                      label="Resonance" accent="#fbbf24"
+                      tooltip="Energy in the 1–4 kHz presence band. Higher = fuller, more projected sound."
+                      delta={formatDelta(activeReportDetail.resonanceScore, baseline.resonanceScore)}
+                    />
+                  )}
+                  {activeReportDetail.clarityPct !== undefined && (
+                    <CircleMetric
+                      value={`${Math.round(activeReportDetail.clarityPct)}`} unit="%" sub="clarity"
+                      label="Clarity" accent="#34d399"
+                      tooltip="Dominant frequency vs. total spectral noise. Higher = cleaner, more focused tone."
+                      delta={formatDelta(activeReportDetail.clarityPct, baseline.clarityPct)}
+                    />
+                  )}
+                  {activeReportDetail.stabilityPct !== undefined && (
+                    <CircleMetric
+                      value={`${Math.round(activeReportDetail.stabilityPct)}`} unit="%" sub="stability"
+                      label="Stability" accent="#22d3ee"
+                      tooltip="How steady your pitch held over the session. Higher = fewer wavers or breaks."
+                      delta={formatDelta(activeReportDetail.stabilityPct, baseline.stabilityPct)}
+                    />
+                  )}
+                  {activeReportDetail.loudnessDb !== undefined && (
+                    <CircleMetric
+                      value={loudnessLevel(activeReportDetail.loudnessDb)} unit="" sub="loudness"
+                      label="Loudness" accent={loudnessLevelColor(loudnessLevel(activeReportDetail.loudnessDb))}
+                      tooltip="How loud you were, calibrated to that session's mic and room."
+                    />
+                  )}
+                  {(() => {
+                    const f = activeReportDetail.fatigueLevel;
+                    const estimate = f <= 33 ? 'Low' : f <= 66 ? 'Moderate' : 'High';
+                    const accent = f <= 33 ? '#22d3ee' : f <= 66 ? '#fbbf24' : '#fb7185';
+                    return (
+                      <CircleMetric
+                        value={estimate} unit="" sub="fatigue"
+                        label="Energy" accent={accent}
+                        tooltip="Estimated from pitch jitter. Low jitter means your pitch held steady — less vocal strain."
+                      />
+                    );
+                  })()}
                 </div>
               )}
-            </>
-          )}
+          </>
+        )}
+
+        {activeReportDetail.insight && (
+          <div className="relative flex flex-col gap-3 py-7 px-6 mb-8">
+            <div className="absolute inset-0 rounded-3xl pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(23,169,201,0.1) 0%, rgba(33,232,255,0.04) 55%, transparent 100%)' }} />
+            <p className="text-[9px] font-mono tracking-widest uppercase text-center sm:text-left" style={{ color: 'rgba(33,232,255,0.6)' }}>AI Insight</p>
+            <p className="text-[14px] font-light text-zinc-200 leading-relaxed text-center sm:text-left">{activeReportDetail.insight}</p>
+          </div>
+        )}
+
+        {activeReportDetail.recommendedRituals && activeReportDetail.recommendedRituals.length > 0 && (
+          <div className="flex flex-col gap-2 mb-8">
+            <p className="text-[9px] font-mono tracking-widest uppercase text-zinc-500 text-center sm:text-left">Recommended for you</p>
+            {activeReportDetail.recommendedRituals.map(rec => {
+              const ritual = EXERCISE_RITUALS.find(r => r.id === rec.ritualId);
+              if (!ritual) return null; // catalog may have changed since this report was saved
+              return (
+                <div key={rec.ritualId} className="rounded-xl px-4 py-3" style={{ background: 'rgba(23,169,201,0.05)', border: '1px solid rgba(33,232,255,0.15)' }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13px] font-light text-zinc-200">{ritual.name}</span>
+                    <span className="text-[9px] font-mono text-[#21e8ff]/70 uppercase">{ritual.category}</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-500 mt-1">{rec.reason}</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div className="space-y-6">
           <div className="space-y-4">
@@ -677,6 +729,8 @@ export default function ReportsPage({
       <VoiceAnalyzerPage
         onBack={() => setShowAnalyzer(false)}
         onSave={(report) => { onAddReport(report); setShowAnalyzer(false); }}
+        todayVocalEffort={todayVocalEffort}
+        todayVocalConfidence={todayVocalConfidence}
       />
     );
   }

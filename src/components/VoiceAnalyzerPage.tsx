@@ -1,25 +1,20 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, Mic, Square, Check, Activity, Shuffle } from 'lucide-react';
-import { VocalReport } from '../types/onboarding';
+import { VocalReport, VoiceAnalyzerSections } from '../types/onboarding';
 import { READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS, TWISTER_PHRASES, pickRandomPhrase } from '../lib/recordingPrompts';
-import { ANALYSIS_BUFFER_SIZE, SILENCE_RMS_THRESHOLD, detectPitchFrame, isConfidentPitch, measureFrameRms, measureFrameResonance, calibrateInputGain, applyGain, computeSegmentMetrics, loudnessLevel, loudnessLevelColor, type SegmentMetrics } from '../lib/voiceAnalysis';
+import { ANALYSIS_BUFFER_SIZE, SILENCE_RMS_THRESHOLD, calibrateInputGain, applyGain, measureFrameRms } from '../lib/voiceAnalysis';
+import { tokenizeWords, calculateWpm, wordLevelSimilarity, evaluateSustainedVowel, analyzeAcoustics, average } from '../lib/sectionAnalysis';
+import SectionCard from './SectionCard';
 
 interface VoiceAnalyzerPageProps {
   onBack: () => void;
   onSave: (report: Omit<VocalReport, 'id'>) => void;
+  todayVocalEffort?: number | null;
+  todayVocalConfidence?: number | null;
 }
 
-interface VocalMetrics {
-  pitchHz: number;
-  pitchRangeHz: number;
-  resonanceScore: number;
-  clarityPct: number;
-  loudnessDb: number;
-  stabilityPct: number;
-  fatigueEstimate: 'Low' | 'Moderate' | 'High';
-  fatigueLevel: number;
-}
+type SectionResult = VoiceAnalyzerSections;
 
 // Same 3 steps, in the same order, as the onboarding baseline recorder (BaselineFlow.tsx). Read
 // Aloud / Free Speech get a random phrase each time (see recordingPrompts.ts) — picked once per
@@ -53,32 +48,18 @@ function buildSteps() {
 // no variety to swap between.
 const PHRASE_LISTS_BY_STEP: (string[] | null)[] = [null, TWISTER_PHRASES, READ_ALOUD_PHRASES, FREE_SPEECH_PROMPTS];
 
-function noteFromHz(hz: number): string {
-  const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-  const semitones = Math.round(12 * Math.log2(hz / 440)) + 69;
-  const note = noteNames[((semitones % 12) + 12) % 12];
-  const octave = Math.floor(semitones / 12) - 1;
-  return `${note}${octave}`;
-}
-
-function generateInsight(m: VocalMetrics): string {
-  const resonanceLine = m.resonanceScore > 70
-    ? `Your resonance is strong at ${m.resonanceScore}/100 — your voice is carrying well into the mid-frequency presence band.`
-    : m.resonanceScore < 40
-      ? `Resonance is low at ${m.resonanceScore}/100. Try placing your voice more forward in the mouth and engaging your chest more.`
-      : `Resonance is moderate at ${m.resonanceScore}/100. There's room to develop more projection with targeted exercises.`;
-
-  const clarityLine = m.clarityPct > 75
-    ? `Tone clarity is excellent — your voice is clean and well-focused with minimal breathiness.`
-    : `Some breathiness was detected. This may indicate mild vocal fatigue or airflow inefficiency — try a sustained hum warm-up before your next session.`;
-
-  const fatigueLine = m.fatigueEstimate === 'Low'
-    ? `Pitch jitter is low, suggesting your vocal folds are stable and well-rested.`
-    : m.fatigueEstimate === 'Moderate'
-      ? `Moderate pitch instability detected. Consider hydrating and spacing out speaking demands over the next few hours.`
-      : `High jitter levels indicate significant vocal strain. Rest your voice and avoid prolonged speaking until recovered.`;
-
-  return `${resonanceLine} ${clarityLine} ${fatigueLine}`;
+// Used only if the /api/voice-report-insight fetch fails entirely — deterministic, references only
+// what was actually measured/reported, same fallback-on-failure spirit as the server's own
+// fallbackVoiceReportInsight.
+function fallbackLocalInsight(result: SectionResult, feelings: string[]): string {
+  const rateLine = `In your read-aloud section you spoke at ${result.readAloud.wpm} words per minute with a ${result.readAloud.matchPct}% match to the passage, and your free speech ran ${result.freeSpeech.wpm} WPM across ${result.freeSpeech.wordCount} words.`;
+  const vowelLine = result.sustainedVowel.pass
+    ? 'Your sustained vowel recording came through clearly.'
+    : `Your sustained vowel recording didn't come through clearly — ${result.sustainedVowel.reasonIfFailed}`;
+  const feelingsLine = feelings.length > 0
+    ? ` You noted feeling ${feelings.join(', ').toLowerCase()} afterward — worth keeping an eye on if that continues across sessions.`
+    : '';
+  return `${rateLine} ${vowelLine}${feelingsLine} A steady, comfortable pace across all sections is a good sign of consistent vocal control.`;
 }
 
 const FEELINGS = [
@@ -91,7 +72,7 @@ const FEELINGS = [
 ];
 
 
-export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageProps) {
+export default function VoiceAnalyzerPage({ onBack, onSave, todayVocalEffort, todayVocalConfidence }: VoiceAnalyzerPageProps) {
   type AnalyzerPhase = 'record' | 'analyzing' | 'results' | 'too-quiet';
   type RecordingState = 'idle' | 'recording' | 'done';
 
@@ -99,16 +80,20 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   const [resultsStep, setResultsStep] = useState<'metrics' | 'log'>('metrics');
   const [step, setStep] = useState(0); // which of the 3 recording steps (0-2)
   const [steps, setSteps] = useState(buildSteps);
+  // Which attempt within the current step is active — only ever advances past 0 for Twisters/Read
+  // Aloud, via "Try Another Prompt" (see handleTryAnother below). No fixed cap: someone can redo
+  // as many times as they want, and whatever they recorded gets averaged in handleAnalyze().
+  const [rep, setRep] = useState(0);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [seconds, setSeconds] = useState(0);
   const [totalSeconds, setTotalSeconds] = useState(0); // summed across all 3 steps, for the saved report's duration
-  const [metrics, setMetrics] = useState<VocalMetrics | null>(null);
+  const [sectionResult, setSectionResult] = useState<SectionResult | null>(null);
   const [barHeights, setBarHeights] = useState<number[]>(new Array(28).fill(0.08));
 
   const [formFeelings, setFormFeelings] = useState<string[]>([]);
   const [formName, setFormName] = useState('');
   const [formNotes, setFormNotes] = useState('');
-  const [savingInsight, setSavingInsight] = useState(false);
+  const [insightLoading, setInsightLoading] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
   const [notesFocused, setNotesFocused] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
@@ -118,21 +103,27 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   const audioContextRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pitchReadings = useRef<number[]>([]);
-  const clarityReadings = useRef<number[]>([]);
-  const loudnessReadings = useRef<number[]>([]);
-  const resonanceReadings = useRef<number[]>([]);
+  const rmsReadings = useRef<number[]>([]);
   const lastPitchTime = useRef<number>(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
   // Calibrated once, on the first recording of the session, and reused for every subsequent step —
   // see calibrateInputGain. `null` means calibration hasn't run yet.
   const inputGainRef = useRef<number | null>(null);
   const [isCalibrating, setIsCalibrating] = useState(false);
 
-  // Per-step captured data — one slot per STEPS entry, combined in computeMetrics() below.
-  const allPitchReadings = useRef<number[][]>([[], [], [], []]);
-  const allClarityReadings = useRef<number[][]>([[], [], [], []]);
-  const allLoudnessReadings = useRef<number[][]>([[], [], [], []]);
-  const allResonanceReadings = useRef<number[][]>([[], [], [], []]);
+  // Per-step, per-attempt captured data — one array per STEPS entry, growing by one slot each time
+  // an attempt finishes (no fixed size: Sustained Vowel/Free Speech only ever get one, Twisters/
+  // Read Aloud can get more via "Try Another Prompt"). Combined/averaged in handleAnalyze() below.
+  const allRmsReadings = useRef<number[][][]>([[], [], [], []]);
+  const allAudioBlobs = useRef<(Blob | null)[][]>([[], [], [], []]);
+  const allDurations = useRef<number[][]>([[], [], [], []]);
+  // The exact prompt text shown at the moment each recording finished — frozen here rather than
+  // read live from `steps` at analysis time, since the Shuffle button (or the auto-reshuffle
+  // between attempts) can swap a step's prompt after it's already been recorded (but before
+  // "Analyze Voice" is tapped). Without this, a transcript would get scored against whichever
+  // prompt happens to be displayed later, not the one the person actually read.
+  const allPrompts = useRef<string[][]>([[], [], [], []]);
 
   const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
@@ -147,17 +138,24 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     return () => stopRecording();
   }, [stopRecording]);
 
+  const pickMimeType = () => {
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+    for (const type of candidates) {
+      if (MediaRecorder.isTypeSupported(type)) return type;
+    }
+    return ''; // browser default
+  };
+
   const startRecording = async () => {
     try {
-      pitchReadings.current = [];
-      clarityReadings.current = [];
-      loudnessReadings.current = [];
-      resonanceReadings.current = [];
+      rmsReadings.current = [];
+      recordedChunksRef.current = [];
       lastPitchTime.current = 0;
 
       // Explicitly disable the browser's mic processing — auto gain control in particular will
       // actively boost quiet/silent input toward a target loudness, which both defeats the
-      // loudness metric and can amplify ambient noise enough to trip pitch detection.
+      // loudness-based signal gate and can amplify ambient noise enough to trip the Sustained Vowel
+      // quality check.
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
         video: false,
@@ -169,6 +167,16 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
 
       mediaStreamRef.current = stream;
       audioContextRef.current = ctx;
+
+      // Record the actual audio alongside the live analysis — needed for server-side transcription
+      // (Read Aloud / Twisters / Free Speech) and as the input to the analyzeAcoustics stub.
+      const mimeType = pickMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recorder.ondataavailable = e => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      // Defensive hard stop — never let a forgotten recording run indefinitely.
+      setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 120000);
 
       // Calibrate input gain to this specific mic/room once per session (not once per step) —
       // brief enough that it happens before most people start speaking after tapping record, but
@@ -201,19 +209,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
 
         if (now - lastPitchTime.current > 80) {
           lastPitchTime.current = now;
-          const frame = detectPitchFrame(floatBuffer, ctx.sampleRate);
-          if (frame.hz > 0) {
-            clarityReadings.current.push(frame.clarity);
-            if (isConfidentPitch(frame)) pitchReadings.current.push(frame.hz);
-          }
-          // Loudness/resonance are sampled on every signal-present frame across the whole
-          // recording (not just an instant grabbed when recording stops), gated on raw volume
-          // rather than pitch/periodicity so loud unvoiced sounds still count.
-          const rms = measureFrameRms(floatBuffer);
-          if (rms > SILENCE_RMS_THRESHOLD) {
-            loudnessReadings.current.push(rms);
-            resonanceReadings.current.push(measureFrameResonance(floatBuffer, ctx.sampleRate));
-          }
+          rmsReadings.current.push(measureFrameRms(floatBuffer));
         }
 
         rafRef.current = requestAnimationFrame(loop);
@@ -229,96 +225,132 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     if (recordingState === 'idle') {
       startRecording();
     } else if (recordingState === 'recording') {
-      stopRecording();
+      const recorder = mediaRecorderRef.current;
+      const finishStep = (blob: Blob | null) => {
+        allAudioBlobs.current[step][rep] = blob;
+        allRmsReadings.current[step][rep] = [...rmsReadings.current];
+        allDurations.current[step][rep] = seconds;
+        allPrompts.current[step][rep] = steps[step].instruction;
+        setTotalSeconds(t => t + seconds);
+        setRecordingState('done');
+        setBarHeights(new Array(28).fill(0.08));
+      };
 
-      allPitchReadings.current[step] = [...pitchReadings.current];
-      allClarityReadings.current[step] = [...clarityReadings.current];
-      allLoudnessReadings.current[step] = [...loudnessReadings.current];
-      allResonanceReadings.current[step] = [...resonanceReadings.current];
-      setTotalSeconds(t => t + seconds);
-
-      setRecordingState('done');
-      setBarHeights(new Array(28).fill(0.08));
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.onstop = () => {
+          const blob = recordedChunksRef.current.length > 0
+            ? new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+            : null;
+          stopRecording();
+          finishStep(blob);
+        };
+        recorder.stop();
+      } else {
+        // Recorder already stopped (e.g. the defensive 2-minute auto-stop in startRecording fired
+        // before the user tapped stop) — any chunks it already captured via ondataavailable are
+        // still sitting in recordedChunksRef, so don't discard them.
+        const blob = recorder && recordedChunksRef.current.length > 0
+          ? new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+          : null;
+        stopRecording();
+        finishStep(blob);
+      }
     }
   };
 
   const handleReRecord = () => {
     stopRecording();
-    allPitchReadings.current[step] = [];
-    allClarityReadings.current[step] = [];
-    allLoudnessReadings.current[step] = [];
-    allResonanceReadings.current[step] = [];
-    pitchReadings.current = [];
-    clarityReadings.current = [];
-    loudnessReadings.current = [];
-    resonanceReadings.current = [];
+    allAudioBlobs.current[step][rep] = null;
+    allRmsReadings.current[step][rep] = [];
+    allDurations.current[step][rep] = 0;
+    allPrompts.current[step][rep] = '';
+    rmsReadings.current = [];
+    recordedChunksRef.current = [];
     setRecordingState('idle');
     setSeconds(0);
     setBarHeights(new Array(28).fill(0.08));
   };
 
-  // Combines the 3 recorded steps into one report — identical per-segment math and combine
-  // weights as BaselineFlow.tsx's onboarding baseline, so a voice-analyzer report scores an
-  // equivalent recording the same way the baseline does.
-  const computeMetrics = useCallback((): { metrics: VocalMetrics; lowSignal: boolean } => {
-    const segMetrics = [0, 1, 2, 3].map(i => computeSegmentMetrics(
-      allPitchReadings.current[i],
-      allClarityReadings.current[i],
-      allLoudnessReadings.current[i],
-      allResonanceReadings.current[i],
-    ));
+  const transcribeAudio = async (blob: Blob | null): Promise<string | null> => {
+    if (!blob) return null;
+    try {
+      const res = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': blob.type || 'application/octet-stream' },
+        body: blob,
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return typeof data.transcript === 'string' && data.transcript.length > 0 ? data.transcript : null;
+    } catch {
+      return null;
+    }
+  };
 
-    const avg = (key: keyof Omit<SegmentMetrics, 'lowSignal'>) =>
-      Math.round((segMetrics[0][key] + segMetrics[1][key] + segMetrics[2][key] + segMetrics[3][key]) / 4);
-
-    // Stability weighted: vowel most diagnostic (matches BaselineFlow.tsx exactly).
-    const stabilityPct = Math.round(
-      segMetrics[0].stabilityPct * 0.35 +
-      segMetrics[1].stabilityPct * 0.15 +
-      segMetrics[2].stabilityPct * 0.30 +
-      segMetrics[3].stabilityPct * 0.20,
-    );
-    const resonanceScore = avg('resonanceScore');
-    const clarityPct = avg('clarityPct');
-    const fatigueLevel = stabilityPct > 70 ? 20 : stabilityPct > 40 ? 55 : 80;
-    const fatigueEstimate: 'Low' | 'Moderate' | 'High' = stabilityPct > 70 ? 'Low' : stabilityPct > 40 ? 'Moderate' : 'High';
-
-    // If most of the 4 recorded segments picked up essentially no voice, every metric above is
-    // just noise-floor numbers — show a "too quiet" state instead of a misleadingly precise score.
-    const lowSignal = segMetrics.filter(s => s.lowSignal).length >= 3;
-
-    return {
-      metrics: {
-        pitchHz: avg('pitchHz'),
-        pitchRangeHz: avg('pitchRangeHz'),
-        resonanceScore,
-        clarityPct,
-        loudnessDb: avg('loudnessDb'),
-        stabilityPct,
-        fatigueEstimate,
-        fatigueLevel,
-      },
-      lowSignal,
-    };
-  }, []);
-
-  const handleAnalyze = () => {
+  // Runs the new per-section analysis: a volume-only quality check for Sustained Vowel, and
+  // server-side transcription (Whisper, via /api/transcribe) + speaking-rate/similarity math for
+  // the other 3 steps. Replaces the old 4-segment acoustic combine.
+  const handleAnalyze = async () => {
     setPhase('analyzing');
-    setTimeout(() => {
-      const { metrics: m, lowSignal } = computeMetrics();
-      if (lowSignal) {
-        setPhase('too-quiet');
-        return;
-      }
-      setMetrics(m);
-      setPhase('results');
-    }, 2200);
+
+    const sustainedVowel = evaluateSustainedVowel(allRmsReadings.current[0][0] ?? [], allDurations.current[0][0] ?? 0);
+
+    const transcribeStep = (stepIdx: number) => Promise.all(allAudioBlobs.current[stepIdx].map(transcribeAudio));
+    const [twisterTexts, readAloudTexts, freeSpeechTexts] = await Promise.all([1, 2, 3].map(transcribeStep));
+
+    const buildAttempts = <K extends 'accuracyPct' | 'matchPct'>(texts: (string | null)[], stepIdx: number, scoreKey: K) =>
+      texts.map((text, i) => ({
+        prompt: allPrompts.current[stepIdx][i],
+        transcript: text,
+        wpm: text ? calculateWpm(tokenizeWords(text).length, allDurations.current[stepIdx][i]) : 0,
+        [scoreKey]: text ? wordLevelSimilarity(text, allPrompts.current[stepIdx][i]) : 0,
+      } as { prompt: string; transcript: string | null; wpm: number } & Record<K, number>));
+
+    const twisterAttempts = buildAttempts(twisterTexts, 1, 'accuracyPct');
+    const readAloudAttempts = buildAttempts(readAloudTexts, 2, 'matchPct');
+
+    const tongueTwisters = {
+      wpm: average(twisterAttempts.map(a => a.wpm)),
+      accuracyPct: average(twisterAttempts.map(a => a.accuracyPct)),
+      transcript: twisterAttempts.map(a => a.transcript).filter(Boolean).join(' / ') || null,
+      attempts: twisterAttempts,
+    };
+    const readAloud = {
+      wpm: average(readAloudAttempts.map(a => a.wpm)),
+      matchPct: average(readAloudAttempts.map(a => a.matchPct)),
+      transcript: readAloudAttempts.map(a => a.transcript).filter(Boolean).join(' / ') || null,
+      attempts: readAloudAttempts,
+    };
+    const freeSpeechText = freeSpeechTexts[0] ?? null;
+    const freeSpeech = {
+      wpm: freeSpeechText ? calculateWpm(tokenizeWords(freeSpeechText).length, allDurations.current[3][0]) : 0,
+      wordCount: freeSpeechText ? tokenizeWords(freeSpeechText).length : 0,
+      transcript: freeSpeechText,
+    };
+    const acoustics = await analyzeAcoustics(
+      allAudioBlobs.current.map((blobs, i) => ({ label: steps[i].label, blob: blobs[0] ?? new Blob() }))
+    );
+
+    // A single flaky transcription shouldn't block an otherwise-fine session — only treat the whole
+    // recording as unusable if Sustained Vowel failed AND every transcription came back empty.
+    const allQuiet = !sustainedVowel.pass
+      && twisterTexts.every(t => !t)
+      && readAloudTexts.every(t => !t)
+      && !freeSpeechText;
+    if (allQuiet) {
+      setPhase('too-quiet');
+      return;
+    }
+
+    setSectionResult({ sustainedVowel, tongueTwisters, readAloud, freeSpeech, acoustics });
+    setPhase('results');
   };
 
   // Advances to the next of the 3 recording steps, or triggers the final analysis after step 3.
   const handleNextStep = () => {
     if (step < steps.length - 1) {
       setStep(s => s + 1);
+      setRep(0);
       setRecordingState('idle');
       setSeconds(0);
     } else {
@@ -326,23 +358,39 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     }
   };
 
+  // Lets someone optionally redo Twisters/Read Aloud with a freshly shuffled prompt instead of
+  // moving on — no fixed count, they can tap this as many times as they want before "Continue".
+  // handleAnalyze() averages across however many attempts actually got recorded.
+  const handleTryAnother = () => {
+    setRep(r => r + 1);
+    const list = PHRASE_LISTS_BY_STEP[step];
+    if (list) {
+      setSteps(prev => {
+        const next = [...prev];
+        next[step] = { ...next[step], instruction: pickRandomPhrase(list, next[step].instruction) };
+        return next;
+      });
+    }
+    setRecordingState('idle');
+    setSeconds(0);
+  };
+
   // Resets all 3 recorded steps — used when restarting the whole flow from the results screen.
   const handleStartOver = () => {
     stopRecording();
     setStep(0);
+    setRep(0);
     setSteps(buildSteps());
     setRecordingState('idle');
     setSeconds(0);
     setTotalSeconds(0);
     setBarHeights(new Array(28).fill(0.08));
-    pitchReadings.current = [];
-    clarityReadings.current = [];
-    loudnessReadings.current = [];
-    resonanceReadings.current = [];
-    allPitchReadings.current = [[], [], [], []];
-    allClarityReadings.current = [[], [], [], []];
-    allLoudnessReadings.current = [[], [], [], []];
-    allResonanceReadings.current = [[], [], [], []];
+    rmsReadings.current = [];
+    recordedChunksRef.current = [];
+    allRmsReadings.current = [[], [], [], []];
+    allAudioBlobs.current = [[], [], [], []];
+    allDurations.current = [[], [], [], []];
+    allPrompts.current = [[], [], [], []];
   };
 
   // Swaps just the current step's phrase for a different random one from the same pool — lets
@@ -357,52 +405,57 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
     });
   };
 
+  // The AI insight is generated at Save time, not shown during the session — it needs the final
+  // feelings/notes the person picks on this screen, and showing it earlier meant it was talking
+  // about symptoms before they'd had a chance to select any. It only ever appears afterward, on
+  // the saved report in ReportsPage (which already just renders `report.insight`).
   const handleSave = async () => {
-    if (!metrics || savingInsight) return;
-    setSavingInsight(true);
+    if (!sectionResult || insightLoading) return;
+    setInsightLoading(true);
+
     let insight: string;
+    let recommendedRituals: { ritualId: string; reason: string }[];
     try {
       const res = await fetch('/api/voice-report-insight', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pitchHz: metrics.pitchHz,
-          pitchRangeHz: metrics.pitchRangeHz,
-          resonanceScore: metrics.resonanceScore,
-          clarityPct: metrics.clarityPct,
-          loudnessDb: metrics.loudnessDb,
-          stabilityPct: metrics.stabilityPct,
-          fatigueEstimate: metrics.fatigueEstimate,
+          sustainedVowel: sectionResult.sustainedVowel,
+          tongueTwisters: { wpm: sectionResult.tongueTwisters.wpm, accuracyPct: sectionResult.tongueTwisters.accuracyPct },
+          readAloud: { wpm: sectionResult.readAloud.wpm, matchPct: sectionResult.readAloud.matchPct },
+          freeSpeech: { wpm: sectionResult.freeSpeech.wpm, wordCount: sectionResult.freeSpeech.wordCount },
           feelings: formFeelings,
           notes: formNotes,
+          todayVocalEffort: todayVocalEffort ?? null,
+          todayVocalConfidence: todayVocalConfidence ?? null,
         }),
       });
       const data = await res.json();
-      if (!res.ok || typeof data.insight !== 'string') throw new Error('bad response');
-      insight = data.insight;
+      insight = typeof data.insight === 'string' ? data.insight : fallbackLocalInsight(sectionResult, formFeelings);
+      recommendedRituals = Array.isArray(data.recommendedRituals) ? data.recommendedRituals : [];
     } catch {
-      insight = generateInsight(metrics);
+      insight = fallbackLocalInsight(sectionResult, formFeelings);
+      recommendedRituals = [];
     }
-    setSavingInsight(false);
 
     const now = new Date();
     const autoName = `Vocal Report — ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+    // A transparent, self-reported "load index" — how many "How did it feel?" symptoms were
+    // picked — not an acoustic measurement. Kept on the same 0-100 scale the field has always used
+    // (PDF export and old reports' display both depend on it).
+    const fatigueLevel = Math.round((formFeelings.length / FEELINGS.length) * 100);
     onSave({
       name: formName.trim() || autoName,
       ritualName: autoName,
       category: 'Calibrate',
       date: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       duration: formatTime(totalSeconds),
-      fatigueLevel: metrics.fatigueLevel,
+      fatigueLevel,
       feelings: formFeelings,
       notes: formNotes,
       insight,
-      pitchHz: metrics.pitchHz,
-      pitchRangeHz: metrics.pitchRangeHz,
-      resonanceScore: metrics.resonanceScore,
-      clarityPct: metrics.clarityPct,
-      loudnessDb: metrics.loudnessDb,
-      stabilityPct: metrics.stabilityPct,
+      sections: sectionResult,
+      recommendedRituals,
     });
     onBack();
   };
@@ -410,10 +463,6 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   const toggleFeeling = (label: string) => {
     setFormFeelings(prev => prev.includes(label) ? prev.filter(f => f !== label) : [...prev, label]);
   };
-
-  const pitchRangeLabel = (hz: number) => hz < 40 ? 'Narrow' : hz < 120 ? 'Moderate' : 'Wide';
-  const fatigueColor = (f: 'Low' | 'Moderate' | 'High') =>
-    f === 'Low' ? '#22d3ee' : f === 'Moderate' ? '#fbbf24' : '#fb7185';
 
   return (
     <div className="min-h-screen w-full relative">
@@ -425,7 +474,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
             resultsStep === 'log'
               ? () => setResultsStep('metrics')
               : phase === 'results'
-                ? () => { setPhase('record'); setMetrics(null); setResultsStep('metrics'); handleStartOver(); }
+                ? () => { setPhase('record'); setSectionResult(null); setResultsStep('metrics'); handleStartOver(); }
                 : onBack
           }
           className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer"
@@ -437,7 +486,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
           <button
             onClick={resultsStep === 'log'
               ? () => setResultsStep('metrics')
-              : () => { setPhase('record'); setMetrics(null); setResultsStep('metrics'); handleStartOver(); }
+              : () => { setPhase('record'); setSectionResult(null); setResultsStep('metrics'); handleStartOver(); }
             }
             className="cursor-pointer"
           >
@@ -448,7 +497,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
         ) : (
           <div>
             <h1 className="text-[15px] font-light text-white tracking-wide">Voice Analyzer</h1>
-            <p className="text-[10px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.45)' }}>Real-time vocal analysis</p>
+            <p className="text-[10px] font-light tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.45)' }}>Real-time vocal analysis</p>
           </div>
         )}
         <div className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full" style={{ background: 'rgba(23,169,201,0.1)', border: '1px solid rgba(33,232,255,0.25)', boxShadow: '0 0 12px rgba(33,232,255,0.06)' }}>
@@ -489,7 +538,10 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
             <div className="w-full max-w-lg rounded-[20px] px-7 py-5 text-center" style={{ background: 'linear-gradient(135deg, rgba(23,169,201,0.06) 0%, rgba(33,232,255,0.02) 100%)', border: '1px solid rgba(33,232,255,0.18)', boxShadow: '0 0 24px rgba(33,232,255,0.04), inset 0 1px 0 rgba(33,232,255,0.08)' }}>
               <div className="flex items-center justify-center gap-2 mb-2">
                 <p className="text-[10px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.5)' }}>{steps[step].label}</p>
-                {PHRASE_LISTS_BY_STEP[step] && (
+                {rep > 0 && (
+                  <span className="text-[9px] font-mono text-zinc-500">Attempt {rep + 1}</span>
+                )}
+                {PHRASE_LISTS_BY_STEP[step] && recordingState === 'idle' && (
                   <button
                     onClick={handleSwapPhrase}
                     className="flex items-center justify-center w-5 h-5 rounded-full text-[#21e8ff]/60 hover:text-[#21e8ff] hover:bg-[#21e8ff]/10 transition-colors duration-150 cursor-pointer"
@@ -503,25 +555,9 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
               <p className="text-[17px] font-light text-zinc-200 leading-relaxed italic">
                 {steps[step].instruction}
               </p>
-              <p className="text-[9px] font-mono text-zinc-600 mt-2">{steps[step].hint}</p>
-            </div>
-
-            {/* Waveform */}
-            <div className="w-full max-w-lg h-16 flex items-center justify-center gap-[3px]">
-              {barHeights.map((h, i) => (
-                <motion.div
-                  key={i}
-                  animate={{ scaleY: h }}
-                  transition={{ duration: 0.06, ease: 'linear' }}
-                  className="w-1.5 rounded-full origin-center"
-                  style={{
-                    height: 48,
-                    background: recordingState === 'recording'
-                      ? `rgba(33,232,255,${0.3 + h * 0.7})`
-                      : 'rgba(33,232,255,0.2)',
-                  }}
-                />
-              ))}
+              {step === 0 && (
+                <p className="text-[9px] font-mono text-zinc-600 mt-2">{steps[step].hint}</p>
+              )}
             </div>
 
             {/* Mic button */}
@@ -550,8 +586,8 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
                 {recordingState === 'done' && <Check className="w-7 h-7 text-emerald-400" />}
               </button>
 
-              <p className="text-[11px] font-mono tracking-widest" style={{
-                color: isCalibrating ? '#fbbf24' : recordingState === 'idle' ? 'rgba(33,232,255,0.5)' : recordingState === 'recording' ? 'rgba(33,232,255,0.7)' : '#71717a'
+              <p className="text-[11px] font-normal tracking-widest text-center w-full" style={{
+                color: isCalibrating ? '#fbbf24' : recordingState === 'idle' ? 'rgba(33,232,255,0.5)' : recordingState === 'recording' ? 'rgba(33,232,255,0.7)' : '#ffffff'
               }}>
                 {isCalibrating && 'CALIBRATING MIC — STAY QUIET...'}
                 {!isCalibrating && recordingState === 'idle' && 'TAP TO RECORD'}
@@ -560,18 +596,52 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
               </p>
             </div>
 
-            {/* Re-record */}
+            {/* Waveform — only while actively recording */}
+            <AnimatePresence>
+              {recordingState === 'recording' && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 64 }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="w-full max-w-lg flex items-center justify-center gap-[3px] overflow-hidden"
+                >
+                  {barHeights.map((h, i) => (
+                    <motion.div
+                      key={i}
+                      animate={{ scaleY: h }}
+                      transition={{ duration: 0.06, ease: 'linear' }}
+                      className="w-1.5 rounded-full origin-center"
+                      style={{ height: 48, background: `rgba(33,232,255,${0.3 + h * 0.7})` }}
+                    />
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Re-record / Try another prompt */}
             <AnimatePresence>
               {recordingState === 'done' && (
-                <motion.button
+                <motion.div
                   initial={{ opacity: 0, x: -4 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -4 }}
-                  onClick={handleReRecord}
-                  className="text-[11px] text-zinc-500 hover:text-zinc-300 tracking-wide underline underline-offset-2 transition-colors duration-150 cursor-pointer"
+                  className="flex items-center gap-4"
                 >
-                  Re-record
-                </motion.button>
+                  <button
+                    onClick={handleReRecord}
+                    className="text-[11px] text-white hover:text-zinc-300 tracking-wide underline underline-offset-2 transition-colors duration-150 cursor-pointer"
+                  >
+                    Re-record
+                  </button>
+                  {(step === 1 || step === 2) && (
+                    <button
+                      onClick={handleTryAnother}
+                      className="text-[11px] text-[#21e8ff]/70 hover:text-[#21e8ff] tracking-wide underline underline-offset-2 transition-colors duration-150 cursor-pointer"
+                    >
+                      Try another prompt
+                    </button>
+                  )}
+                </motion.div>
               )}
             </AnimatePresence>
 
@@ -580,7 +650,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
               <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="text-[28px] font-mono font-light text-[#21e8ff] tabular-nums"
+                className="text-[28px] font-light text-[#ffffff]/70 tabular-nums"
               >
                 {formatTime(seconds)}
               </motion.p>
@@ -676,8 +746,8 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
           </motion.div>
         )}
 
-        {/* ── PHASE: RESULTS — step 1: metrics ── */}
-        {phase === 'results' && metrics && resultsStep === 'metrics' && (
+        {/* ── PHASE: RESULTS — step 1: per-section results ── */}
+        {phase === 'results' && sectionResult && resultsStep === 'metrics' && (
           <motion.div
             key="results-metrics"
             initial="hidden"
@@ -686,130 +756,29 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
             variants={{ visible: { transition: { staggerChildren: 0.07 } } }}
             className="relative z-10 flex flex-col items-center px-6 pt-10 pb-2 gap-10"
           >
-            {/* Vocal Health Index — stacked bar */}
-            {(() => {
-              // Segments mirror totalScore's own weights (resonance 40%, clarity 40%, inverted
-              // fatigue 20%) exactly, so the bar always visually sums to the number above it.
-              const seg1 = Math.round(metrics.resonanceScore * 0.4);
-              const seg2 = Math.round(metrics.clarityPct * 0.4);
-              const seg3 = Math.round((100 - metrics.fatigueLevel) * 0.2);
-              const reserve = 100 - seg1 - seg2 - seg3;
-              const totalScore = Math.round(metrics.resonanceScore * 0.4 + metrics.clarityPct * 0.4 + (100 - metrics.fatigueLevel) * 0.2);
-              const fatigueTint = fatigueColor(metrics.fatigueEstimate);
-              const scoreLabel = totalScore >= 80 ? 'Excellent session' : totalScore >= 60 ? 'Strong performance' : totalScore >= 40 ? 'Moderate — room to grow' : 'Recovery recommended';
-              return (
-                <motion.div
-                  variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' } } }}
-                  className="w-full max-w-lg flex flex-col items-center gap-4 pt-4"
-                >
-                  {/* Score row */}
-                  <div className="flex items-center justify-between w-full px-0.5">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.45)' }}>Vocal Profile</span>
-                      <span className="text-[11px] font-light text-zinc-400">{scoreLabel}</span>
-                    </div>
-                    <div className="flex items-end gap-1.5 leading-none">
-                      <motion.span
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ type: 'spring', stiffness: 200, damping: 18, delay: 0.15 }}
-                        className="text-[34px] font-light text-white tabular-nums"
-                        style={{ lineHeight: 1 }}
-                      >
-                        {totalScore}
-                      </motion.span>
-                      <span className="text-[11px] font-mono text-zinc-600 mb-1">/ 100</span>
-                    </div>
-                  </div>
-
-                  {/* Bar */}
-                  <div className="w-full relative">
-                    <div
-                      className="absolute inset-x-0 -bottom-1.5 h-4 rounded-full blur-lg opacity-25 pointer-events-none"
-                      style={{ background: `linear-gradient(90deg, #fbbf24 0%, #34d399 50%, ${fatigueTint} 100%)` }}
-                    />
-                    <div className="relative w-full h-5 rounded-xl flex overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)' }}>
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${seg1}%` }}
-                        transition={{ duration: 1.0, delay: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
-                        style={{ background: 'linear-gradient(90deg, #d97706, #fbbf24)', flexShrink: 0 }}
-                        className="h-full"
-                      />
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${seg2}%` }}
-                        transition={{ duration: 1.0, delay: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }}
-                        style={{ background: 'linear-gradient(90deg, #059669, #34d399)', borderLeft: '1px solid rgba(0,0,0,0.18)', flexShrink: 0 }}
-                        className="h-full"
-                      />
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${seg3}%` }}
-                        transition={{ duration: 1.0, delay: 0.7, ease: [0.25, 0.46, 0.45, 0.94] }}
-                        style={{ background: `linear-gradient(90deg, ${fatigueTint}88, ${fatigueTint})`, borderLeft: '1px solid rgba(0,0,0,0.18)', flexShrink: 0 }}
-                        className="h-full"
-                      />
-                      <div style={{ flexGrow: 1, borderLeft: reserve > 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }} className="h-full" />
-                    </div>
-                  </div>
-
-                  {/* Legend */}
-                  <div className="flex items-center justify-center gap-5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: '#fbbf24' }} />
-                      <span className="text-[9px] font-mono tracking-wide text-zinc-500">Resonance</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: '#34d399' }} />
-                      <span className="text-[9px] font-mono tracking-wide text-zinc-500">Clarity</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: fatigueTint }} />
-                      <span className="text-[9px] font-mono tracking-wide text-zinc-500">Fatigue</span>
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })()}
-
-            {/* Circles row */}
-            <div className="flex flex-wrap justify-center gap-4 sm:gap-5 py-2 w-full">
-              <CircleMetric
-                value={`${metrics.pitchHz}`} unit="Hz" sub={noteFromHz(metrics.pitchHz)}
-                label="Pitch" accent="#21e8ff"
-                tooltip="The fundamental note your voice naturally sits at, detected via pitch tracking."
+            {/* Section cards — one per recorded step, replacing the old combined acoustic score */}
+            <div className="grid grid-cols-2 gap-4 w-full max-w-lg">
+              <SectionCard
+                label="Sustained Vowel" accent="#21e8ff"
+                primary={sectionResult.sustainedVowel.pass ? 'Pass' : 'Needs retry'}
+                detail={sectionResult.sustainedVowel.reasonIfFailed ?? 'Clear, usable recording'}
               />
-              <CircleMetric
-                value={`${metrics.pitchRangeHz}`} unit="Hz" sub={pitchRangeLabel(metrics.pitchRangeHz)}
-                label="Range" accent="#a78bfa"
-                tooltip="How much your pitch varied. A wider range means more expressive, dynamic delivery."
+              <SectionCard
+                label="Tongue Twisters" accent="#a78bfa"
+                primary={`${sectionResult.tongueTwisters.wpm} WPM`}
+                detail={`${sectionResult.tongueTwisters.accuracyPct}% accuracy`}
+                attempts={sectionResult.tongueTwisters.attempts?.map(a => ({ prompt: a.prompt, score: `${a.accuracyPct}% · ${a.wpm} WPM` }))}
               />
-              <CircleMetric
-                value={`${metrics.resonanceScore}`} unit="" sub="/ 100"
-                label="Resonance" accent="#fbbf24"
-                tooltip="Energy in the 1–4 kHz presence band. Higher = fuller, more projected sound."
+              <SectionCard
+                label="Read Aloud" accent="#fbbf24"
+                primary={`${sectionResult.readAloud.wpm} WPM`}
+                detail={`${sectionResult.readAloud.matchPct}% match`}
+                attempts={sectionResult.readAloud.attempts?.map(a => ({ prompt: a.prompt, score: `${a.matchPct}% · ${a.wpm} WPM` }))}
               />
-              <CircleMetric
-                value={`${metrics.clarityPct}`} unit="%" sub="clarity"
-                label="Clarity" accent="#34d399"
-                tooltip="Dominant frequency vs. total spectral noise. Higher = cleaner, more focused tone."
-              />
-              <CircleMetric
-                value={metrics.fatigueEstimate} unit="" sub="fatigue"
-                label="Energy" accent={fatigueColor(metrics.fatigueEstimate)}
-                pulse
-                tooltip="Estimated from pitch jitter. Low jitter means your pitch held steady — less vocal strain."
-              />
-              <CircleMetric
-                value={loudnessLevel(metrics.loudnessDb)} unit="" sub="loudness"
-                label="Loudness" accent={loudnessLevelColor(loudnessLevel(metrics.loudnessDb))}
-                tooltip="How loud you were, calibrated to this session's mic and room."
-              />
-              <CircleMetric
-                value={`${metrics.stabilityPct}`} unit="%" sub="stability"
-                label="Stability" accent="#818cf8"
-                tooltip="Inverse of pitch jitter. 100% means your pitch was rock-solid throughout the recording."
+              <SectionCard
+                label="Free Speech" accent="#34d399"
+                primary={`${sectionResult.freeSpeech.wpm} WPM`}
+                detail={`${sectionResult.freeSpeech.wordCount} words`}
               />
             </div>
 
@@ -826,12 +795,12 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
         )}
 
         {/* ── PHASE: RESULTS — step 2: log ── */}
-        {phase === 'results' && metrics && resultsStep === 'log' && (
+        {phase === 'results' && sectionResult && resultsStep === 'log' && (
           <div className="relative">
             {/* Section dots */}
             <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2.5 z-20 pointer-events-none" style={{ height: 'calc(100vh - 85px)' }}>
               <div className="flex flex-col gap-2.5 m-auto">
-                {[0, 1, 2].map(i => (
+                {[0, 1].map(i => (
                   <motion.div
                     key={i}
                     animate={{
@@ -861,25 +830,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
             >
               <div className="w-full flex flex-col">
 
-                {/* Section 1 — AI Insight */}
-                <motion.div
-                  variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }}
-                  className="snap-center flex flex-col items-center justify-start pt-16 px-6 w-full max-w-lg mx-auto"
-                  style={{ minHeight: 'calc(100vh - 85px)' }}
-                >
-                  <div className="flex flex-col items-center gap-2 mb-6 relative">
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-12 blur-2xl pointer-events-none" style={{ background: 'rgba(33,232,255,0.07)' }} />
-                    <h2 className="text-[28px] font-light tracking-tight text-white">Your Insights</h2>
-                    <span className="text-[9px] font-mono tracking-widest uppercase" style={{ color: 'rgba(33,232,255,0.4)' }}>optional</span>
-                  </div>
-                  <div className="relative flex flex-col items-center gap-3 py-7 px-6">
-                    <div className="absolute inset-0 rounded-3xl pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(23,169,201,0.1) 0%, rgba(33,232,255,0.04) 55%, transparent 100%)' }} />
-                    <p className="text-[9px] font-mono tracking-widest uppercase text-center" style={{ color: 'rgba(33,232,255,0.6)' }}>AI Insight</p>
-                    <p className="text-[14px] font-light text-zinc-200 leading-relaxed text-center">{generateInsight(metrics)}</p>
-                  </div>
-                </motion.div>
-
-                {/* Section 2 — How did it feel */}
+                {/* Section 1 — How did it feel */}
                 <motion.div
                   variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }}
                   className="snap-center flex flex-col items-center justify-start pt-16 px-6 w-full max-w-lg mx-auto"
@@ -922,7 +873,7 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
                   </div>
                 </motion.div>
 
-                {/* Section 3 — Notes + Save */}
+                {/* Section 2 — Notes + Save */}
                 <motion.div
                   variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }}
                   className="snap-center flex flex-col items-center justify-start pt-16 px-6 w-full max-w-lg mx-auto gap-8"
@@ -970,14 +921,14 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
                   </div>
                   <motion.button
                     onClick={handleSave}
-                    disabled={savingInsight}
-                    whileHover={savingInsight ? undefined : { scale: 1.02, boxShadow: '0 0 40px rgba(33,232,255,0.35)' }}
-                    whileTap={savingInsight ? undefined : { scale: 0.97 }}
+                    disabled={insightLoading}
+                    whileHover={insightLoading ? undefined : { scale: 1.02, boxShadow: '0 0 40px rgba(33,232,255,0.35)' }}
+                    whileTap={insightLoading ? undefined : { scale: 0.97 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 22 }}
                     className="w-full py-4 rounded-2xl text-[11px] font-mono tracking-widest uppercase cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                     style={{ background: 'linear-gradient(135deg, rgba(23,169,201,0.3) 0%, rgba(33,232,255,0.12) 100%)', border: '1px solid rgba(33,232,255,0.55)', color: '#21e8ff', boxShadow: '0 0 24px rgba(33,232,255,0.18)' }}
                   >
-                    {savingInsight ? 'Analyzing...' : 'Save Report'}
+                    {insightLoading ? 'Generating insight...' : 'Save Report'}
                   </motion.button>
                 </motion.div>
 
@@ -990,56 +941,3 @@ export default function VoiceAnalyzerPage({ onBack, onSave }: VoiceAnalyzerPageP
   );
 }
 
-interface CircleMetricProps {
-  value: string;
-  unit: string;
-  sub: string;
-  label: string;
-  accent: string;
-  pulse?: boolean;
-  tooltip?: string;
-}
-
-function CircleMetric({ value, unit, sub, label, accent, pulse, tooltip }: CircleMetricProps) {
-  return (
-    <motion.div
-      variants={{ hidden: { opacity: 0, scale: 0.8 }, visible: { opacity: 1, scale: 1, transition: { type: 'spring', stiffness: 280, damping: 22 } } }}
-      className="flex flex-col items-center gap-2.5"
-    >
-      <motion.div
-        whileHover={{ scale: 1.07 }}
-        transition={{ type: 'spring', stiffness: 350, damping: 20 }}
-        className="w-[92px] h-[92px] sm:w-[118px] sm:h-[118px] rounded-full flex flex-col items-center justify-center gap-0.5 cursor-default relative group"
-        style={{
-          background: `radial-gradient(circle at 38% 32%, ${accent}22 0%, ${accent}08 100%)`,
-          border: `1px solid ${accent}40`,
-          boxShadow: `0 0 28px ${accent}12, inset 0 0 20px ${accent}08`,
-        }}
-      >
-        {pulse && (
-          <motion.div
-            className="absolute inset-0 rounded-full"
-            animate={{ opacity: [0, 0.15, 0] }}
-            transition={{ duration: 2.5, repeat: Infinity }}
-            style={{ background: `radial-gradient(circle, ${accent} 0%, transparent 70%)` }}
-          />
-        )}
-        {/* Value — fades out on hover */}
-        <div className="flex flex-col items-center gap-0.5 transition-opacity duration-150 group-hover:opacity-0">
-          <div className="flex items-baseline gap-0.5 leading-none">
-            <span className="text-[17px] sm:text-[22px] font-light tabular-nums" style={{ color: accent }}>{value}</span>
-            {unit && <span className="text-[9px] sm:text-[11px] font-light" style={{ color: `${accent}90` }}>{unit}</span>}
-          </div>
-          {sub && <span className="text-[8px] sm:text-[10px] font-mono mt-1" style={{ color: `${accent}60` }}>{sub}</span>}
-        </div>
-        {/* Tooltip — fades in on hover */}
-        {tooltip && (
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 px-4 pointer-events-none">
-            <p className="text-[8px] font-mono text-center leading-relaxed" style={{ color: `${accent}bb` }}>{tooltip}</p>
-          </div>
-        )}
-      </motion.div>
-      <span className="text-[9px] font-mono text-zinc-500 tracking-widest uppercase">{label}</span>
-    </motion.div>
-  );
-}

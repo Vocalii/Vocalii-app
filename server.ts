@@ -274,13 +274,26 @@ function fallbackWeeklyInsight(body: WeeklyInsightRequestBody): { overview: stri
 
 const VOICE_REPORT_INSIGHT_TOOL: Anthropic.Tool = {
   name: 'voice_report_insight',
-  description: "Return a short insight explaining this single voice analysis session's results.",
+  description: "Return a short insight reflecting on this single voice-analyzer session, based strictly on what was measured and reported — never inventing acoustic detail.",
   input_schema: {
     type: 'object',
     properties: {
       insight: {
         type: 'string',
-        description: '2-3 sentences, written directly to the user ("you"/"your"), interpreting their pitch, resonance, clarity, loudness, stability, and fatigue readings together — not just restating each number, but explaining what the combination suggests and one concrete, actionable tip. Reference their self-reported feelings/notes if provided, but the acoustic metrics are the primary basis.',
+        description: '2-3 sentences, written directly to the user ("you"/"your"). Reference specific sections by name (e.g. "your speaking rate in the read-aloud section"). Only interpret the measured speaking-rate/match/accuracy numbers and the self-reported feelings/effort/confidence provided — never invent pitch, resonance, clarity, or any acoustic measurement not given. No diagnostic or clinical language. Warm, supportive, educational tone. End with one concrete, actionable tip grounded only in what was measured/reported.',
+      },
+      recommended_rituals: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            ritual_id: { type: 'string', enum: getRitualIdList() },
+            reason: { type: 'string', description: 'One short sentence (10-20 words) explaining why this ritual fits, grounded only in the measured/reported data above.' },
+          },
+          required: ['ritual_id', 'reason'],
+        },
+        maxItems: 3,
+        description: "Optional: 1-3 rituals from the catalog below that clearly fit this session's measured results and/or reported feelings. Omit entirely or return an empty array if nothing clearly fits — never force a recommendation just to fill this.",
       },
     },
     required: ['insight'],
@@ -288,53 +301,62 @@ const VOICE_REPORT_INSIGHT_TOOL: Anthropic.Tool = {
 };
 
 interface VoiceReportInsightRequestBody {
-  pitchHz: number;
-  pitchRangeHz: number;
-  resonanceScore: number;
-  clarityPct: number;
-  loudnessDb: number;
-  stabilityPct: number;
-  fatigueEstimate: 'Low' | 'Moderate' | 'High';
+  sustainedVowel: { pass: boolean; reasonIfFailed: string | null };
+  tongueTwisters: { wpm: number; accuracyPct: number };
+  readAloud: { wpm: number; matchPct: number };
+  freeSpeech: { wpm: number; wordCount: number };
   feelings: string[];
   notes: string;
+  todayVocalEffort?: number | null;
+  todayVocalConfidence?: number | null;
 }
 
 function buildVoiceReportInsightPrompt(body: VoiceReportInsightRequestBody): string {
-  return `You are Vocalii's voice analysis narrator. A user just recorded a short sample and these acoustic metrics were measured from real signal analysis of their voice:
+  const ritualList = EXERCISE_RITUALS
+    .map(r => `- ${r.id}: "${r.name}" (${r.category}) — ${r.description}`)
+    .join('\n');
+
+  return `You are Vocalii's voice analysis narrator. A user just completed a 4-part voice-analyzer session. You are given ONLY what was directly measured from the recordings or self-reported by the user — treat this as the complete and total truth of the session. There is no acoustic data (no pitch, resonance, clarity, or similar) available for this session, and you must never invent, imply, or guess at any such measurement.
 
 Voice & tone: ${getAiTone()}
 
-- Pitch: ${body.pitchHz.toFixed(0)} Hz
-- Pitch range: ${body.pitchRangeHz.toFixed(0)} Hz
-- Resonance score: ${body.resonanceScore}/100
-- Clarity: ${body.clarityPct}%
-- Loudness: ${body.loudnessDb.toFixed(0)} dB
-- Stability: ${body.stabilityPct}%
-- Fatigue estimate (from pitch jitter): ${body.fatigueEstimate}
-${body.feelings.length > 0 ? `- Self-reported feelings: ${body.feelings.join(', ')}` : ''}
+Measured results:
+- Sustained Vowel: ${body.sustainedVowel.pass ? 'recorded successfully' : `could not be analyzed — ${body.sustainedVowel.reasonIfFailed}`}
+- Tongue Twisters: ${body.tongueTwisters.wpm} words per minute, ${body.tongueTwisters.accuracyPct}% match to the target phrase
+- Read Aloud: ${body.readAloud.wpm} words per minute, ${body.readAloud.matchPct}% match to the target passage
+- Free Speech: ${body.freeSpeech.wpm} words per minute, ${body.freeSpeech.wordCount} words spoken
+${body.feelings.length > 0 ? `- Self-reported feelings after recording: ${body.feelings.join(', ')}` : '- No symptoms self-reported after recording'}
 ${body.notes ? `- Notes (supplementary context only): ${body.notes}` : ''}
+${body.todayVocalEffort != null ? `- Today's self-reported vocal effort: ${body.todayVocalEffort}/10` : ''}
+${body.todayVocalConfidence != null ? `- Today's self-reported vocal confidence: ${body.todayVocalConfidence}/5` : ''}
 
-Write a short (2-3 sentence) insight interpreting these readings together — what the combination suggests about their voice right now — plus one concrete, actionable tip. Call the voice_report_insight tool with the insight — no other text.`;
+Rules:
+- Only interpret or reflect what is directly measured or reported above — never invent acoustic measurements, pitch/resonance/clarity numbers, or any metric not listed.
+- No diagnostic or clinical statements (no claims about vocal fold health, strain severity, or medical conditions).
+- Warm, supportive, educational tone.
+- Reference at least one section by name specifically (e.g. "your speaking rate in the read-aloud section...").
+- If feelings were self-reported, acknowledge them and connect them to what was observed in the recordings where it makes sense (e.g. a fast speaking rate alongside reported tension) — but only as a gentle observation, not a diagnosis.
+- 2-3 sentences, ending with one concrete, actionable tip grounded only in the above.
+
+Available rituals (recommend only from this pool, by id):
+${ritualList}
+
+- If (and only if) something here clearly fits what was measured or reported — e.g. reported
+  tension/strain, a failed Sustained Vowel, or a notably slow/fast pace — recommend 1-3 of them by
+  id with a short reason each via the tool's recommended_rituals field. If nothing clearly fits,
+  leave it empty. Never recommend a ritual just to fill the slot.
+- Call the voice_report_insight tool with the insight (and recommended_rituals, if any) — no other text.`;
 }
 
 function fallbackVoiceReportInsight(body: VoiceReportInsightRequestBody): string {
-  const resonanceLine = body.resonanceScore > 70
-    ? `Your resonance is strong at ${body.resonanceScore}/100 — your voice is carrying well into the mid-frequency presence band.`
-    : body.resonanceScore < 40
-      ? `Resonance is low at ${body.resonanceScore}/100. Try placing your voice more forward in the mouth and engaging your chest more.`
-      : `Resonance is moderate at ${body.resonanceScore}/100. There's room to develop more projection with targeted exercises.`;
-
-  const clarityLine = body.clarityPct > 75
-    ? `Tone clarity is excellent — your voice is clean and well-focused with minimal breathiness.`
-    : `Some breathiness was detected. This may indicate mild vocal fatigue or airflow inefficiency — try a sustained hum warm-up before your next session.`;
-
-  const fatigueLine = body.fatigueEstimate === 'Low'
-    ? `Pitch jitter is low, suggesting your vocal folds are stable and well-rested.`
-    : body.fatigueEstimate === 'Moderate'
-      ? `Moderate pitch instability detected. Consider hydrating and spacing out speaking demands over the next few hours.`
-      : `High jitter levels indicate significant vocal strain. Rest your voice and avoid prolonged speaking until recovered.`;
-
-  return `${resonanceLine} ${clarityLine} ${fatigueLine}`;
+  const rateLine = `In your read-aloud section you spoke at ${body.readAloud.wpm} words per minute with a ${body.readAloud.matchPct}% match to the passage, and your free speech ran ${body.freeSpeech.wpm} WPM across ${body.freeSpeech.wordCount} words.`;
+  const vowelLine = body.sustainedVowel.pass
+    ? 'Your sustained vowel recording came through clearly.'
+    : `Your sustained vowel recording didn't come through clearly — ${body.sustainedVowel.reasonIfFailed}`;
+  const feelingsLine = body.feelings.length > 0
+    ? ` You noted feeling ${body.feelings.join(', ').toLowerCase()} afterward — worth keeping an eye on if that continues across sessions.`
+    : '';
+  return `${rateLine} ${vowelLine}${feelingsLine} A steady, comfortable pace across all sections is a good sign of consistent vocal control.`;
 }
 
 const ESCALATION_INSIGHT_TOOL: Anthropic.Tool = {
@@ -604,7 +626,7 @@ app.post('/api/voice-report-insight', async (req, res) => {
     if (!process.env.ANTHROPIC_API_KEY) {
       console.log('[voice-report-insight] no ANTHROPIC_API_KEY set — using template fallback, not Claude');
       await new Promise(resolve => setTimeout(resolve, 500));
-      res.json({ insight: fallbackVoiceReportInsight(body) });
+      res.json({ insight: fallbackVoiceReportInsight(body), recommendedRituals: [] });
       return;
     }
 
@@ -624,21 +646,85 @@ app.post('/api/voice-report-insight', async (req, res) => {
 
     if (!toolUse) {
       console.error('[voice-report-insight] no tool_use block in response, content:', JSON.stringify(response.content));
-      res.json({ insight: fallbackVoiceReportInsight(body) });
+      res.json({ insight: fallbackVoiceReportInsight(body), recommendedRituals: [] });
       return;
     }
 
-    const input = toolUse.input as { insight?: unknown };
+    const input = toolUse.input as { insight?: unknown; recommended_rituals?: unknown };
     if (typeof input.insight !== 'string' || input.insight.trim().length === 0) {
       console.error('[voice-report-insight] unexpected tool input shape:', JSON.stringify(toolUse.input));
-      res.json({ insight: fallbackVoiceReportInsight(body) });
+      res.json({ insight: fallbackVoiceReportInsight(body), recommendedRituals: [] });
       return;
     }
 
-    res.json({ insight: input.insight.trim() });
+    const ritualIdList = getRitualIdList();
+    const rawRituals = Array.isArray(input.recommended_rituals) ? input.recommended_rituals : [];
+    const recommendedRituals = rawRituals
+      .filter((r): r is { ritual_id: string; reason: string } =>
+        typeof r?.ritual_id === 'string' && ritualIdList.includes(r.ritual_id) && typeof r?.reason === 'string')
+      .slice(0, 3)
+      .map(r => ({ ritualId: r.ritual_id, reason: r.reason.trim() }));
+
+    console.log('[voice-report-insight] recommendedRituals:', JSON.stringify(recommendedRituals), '(raw from model:', JSON.stringify(input.recommended_rituals), ')');
+    res.json({ insight: input.insight.trim(), recommendedRituals });
   } catch (err) {
     console.error('voice-report-insight error:', err);
     res.status(500).json({ error: 'Failed to reach the AI service.' });
+  }
+});
+
+// Transcribes a recorded Voice Analyzer segment via OpenAI's Whisper API — server-side rather than
+// the browser's Web Speech API, which has no support at all on iOS Safari. The client posts the
+// raw audio Blob as the request body (not multipart/form-data), so this route scopes its own
+// express.raw() parser rather than touching the global express.json() used everywhere else.
+// Always resolves with { transcript: null } on any failure (missing key, upstream error, timeout,
+// bad input) rather than a non-2xx status — one flaky transcription must never throw the
+// Promise.all in the client's analysis step.
+app.post('/api/transcribe', express.raw({ type: '*/*', limit: '15mb' }), async (req, res) => {
+  try {
+    const audioBuffer = req.body as Buffer;
+    if (!audioBuffer || audioBuffer.length === 0) {
+      res.status(400).json({ error: 'No audio received.' });
+      return;
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+      console.log('[transcribe] no OPENAI_API_KEY set — returning null transcript');
+      res.json({ transcript: null });
+      return;
+    }
+
+    const contentType = req.headers['content-type'] || 'audio/webm';
+    const ext = contentType.includes('mp4') ? 'mp4' : contentType.includes('ogg') ? 'ogg' : 'webm';
+    const formData = new FormData();
+    formData.append('file', new Blob([audioBuffer], { type: contentType }), `audio.${ext}`);
+    formData.append('model', 'whisper-1');
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    let whisperRes: Response;
+    try {
+      whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+        body: formData,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!whisperRes.ok) {
+      console.error('[transcribe] Whisper API error:', whisperRes.status, await whisperRes.text());
+      res.json({ transcript: null });
+      return;
+    }
+
+    const data = await whisperRes.json() as { text?: string };
+    res.json({ transcript: typeof data.text === 'string' ? data.text.trim() : null });
+  } catch (err) {
+    console.error('[transcribe] error:', err);
+    res.json({ transcript: null });
   }
 });
 

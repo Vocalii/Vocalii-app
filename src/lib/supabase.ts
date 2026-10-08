@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
 export type Database = {
   public: {
     Tables: {
@@ -194,6 +196,8 @@ export type Database = {
           clarity_pct: number | null;
           loudness_db: number | null;
           stability_pct: number | null;
+          sections: Json | null;
+          recommended_rituals: Json | null;
           is_favourite: boolean;
           created_at: string;
         };
@@ -214,6 +218,8 @@ export type Database = {
           clarity_pct?: number | null;
           loudness_db?: number | null;
           stability_pct?: number | null;
+          sections?: Json | null;
+          recommended_rituals?: Json | null;
           is_favourite?: boolean;
         };
         Update: {
@@ -232,6 +238,8 @@ export type Database = {
           clarity_pct?: number | null;
           loudness_db?: number | null;
           stability_pct?: number | null;
+          sections?: Json | null;
+          recommended_rituals?: Json | null;
           is_favourite?: boolean;
         };
         Relationships: [];

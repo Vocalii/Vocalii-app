@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS public.vocal_reports (
   pitch_range_hz  NUMERIC,
   resonance_score NUMERIC,
   clarity_pct     NUMERIC,
+  sections        JSONB,
+  recommended_rituals JSONB,
   is_favourite    BOOLEAN NOT NULL DEFAULT FALSE,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -124,6 +126,18 @@ CREATE TABLE IF NOT EXISTS public.vocal_reports (
 -- ALTER TABLE public.vocal_reports
 --   ADD COLUMN IF NOT EXISTS loudness_db NUMERIC,
 --   ADD COLUMN IF NOT EXISTS stability_pct NUMERIC;
+
+-- Voice Analyzer refactor: per-section measurement data (sustained-vowel pass/fail, speaking rate,
+-- prompt-match/accuracy, word count) replaces acoustic scoring for NEW reports. Run this migration
+-- manually in the Supabase SQL editor if vocal_reports already exists:
+-- ALTER TABLE public.vocal_reports
+--   ADD COLUMN IF NOT EXISTS sections JSONB;
+
+-- AI-recommended rituals for a specific report (1-3 ritual id + reason pairs, scoped to that report
+-- only — never written to daily_checkins or any other ritual-selection system). Run this migration
+-- manually in the Supabase SQL editor if vocal_reports already exists:
+-- ALTER TABLE public.vocal_reports
+--   ADD COLUMN IF NOT EXISTS recommended_rituals JSONB;
 
 -- Daily habit-pair completions (marked during the check-in flow)
 CREATE TABLE IF NOT EXISTS public.habit_completions (

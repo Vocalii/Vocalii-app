@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabase } from './lib/supabase';
+import { supabase, type Json } from './lib/supabase';
 import { postCheckInTrigger } from './lib/notificationTriggers';
 import { OnboardingData } from './types/onboarding';
 import { type ProfileUpdates } from './components/ProfilePage';
@@ -44,7 +44,7 @@ function LazyFallback() {
   );
 }
 import { Destination, Attraction, Message, Ritual } from './types';
-import { VocalReport, Role, ExperienceLevel, Goal, VoiceBarrier, HabitPair } from './types/onboarding';
+import { VocalReport, VoiceAnalyzerSections, Role, ExperienceLevel, Goal, VoiceBarrier, HabitPair } from './types/onboarding';
 import { type BaselineMetrics } from './components/BaselineFlow';
 import { EXERCISE_RITUALS } from './ritualsData';
 import { X, Sparkles, Shield, Bookmark, Terminal, HelpCircle, ArrowRight } from 'lucide-react';
@@ -109,6 +109,8 @@ function mapReport(r: {
   clarity_pct: number | null;
   loudness_db: number | null;
   stability_pct: number | null;
+  sections: unknown;
+  recommended_rituals: unknown;
   is_favourite: boolean;
 }): VocalReport {
   return {
@@ -128,6 +130,8 @@ function mapReport(r: {
     clarityPct: r.clarity_pct ?? undefined,
     loudnessDb: r.loudness_db ?? undefined,
     stabilityPct: r.stability_pct ?? undefined,
+    sections: (r.sections as VoiceAnalyzerSections | null) ?? undefined,
+    recommendedRituals: (r.recommended_rituals as { ritualId: string; reason: string }[] | null) ?? undefined,
     favourite: r.is_favourite,
   };
 }
@@ -641,6 +645,8 @@ export default function App() {
       clarity_pct: report.clarityPct ?? null,
       loudness_db: report.loudnessDb ?? null,
       stability_pct: report.stabilityPct ?? null,
+      sections: (report.sections as unknown as Json) ?? null,
+      recommended_rituals: (report.recommendedRituals as unknown as Json) ?? null,
       is_favourite: report.favourite ?? false,
     }).select().single();
 
@@ -1171,6 +1177,8 @@ export default function App() {
                 stabilityPct: baselineStabilityPct,
                 setAt: baselineSetAt,
               }}
+              todayVocalEffort={todayVocalEffort}
+              todayVocalConfidence={todayVocalConfidence}
             />
           </Suspense>
         ) : (

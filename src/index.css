@@ -14,7 +14,7 @@
 
 @keyframes float-title {
   0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-4px); }
+  50% { transform: translateY(-1px); }
 }
 
 /* Matches the app's dark theme so any brief gap between animated screens (e.g. AnimatePresence's
