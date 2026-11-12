@@ -2,12 +2,25 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { type BaselineMetrics } from './BaselineFlow';
 import { loudnessLevel, loudnessLevelColor } from '../lib/voiceAnalysis';
-import { EXERCISE_RITUALS } from '../ritualsData';
 
-const FEELING_EMOJIS: Record<string, string> = {
-  'Hoarseness': '🗣️', 'Dryness': '💧', 'Tension': '😬',
-  'Breathiness': '💨', 'Fatigue': '😴', 'Pain': '😣',
-};
+// A sharper, sleeker 5-point star than lucide's default — same 10-vertex construction (alternating
+// outer/inner radius) but with a smaller inner radius for crisp, pointed tips instead of lucide's
+// slightly rounded/organic ones. Drop-in replacement: same viewBox and prop shape as a lucide icon.
+function StarIcon({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      style={style}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinejoin="round"
+    >
+      <path d="M12 2 L14.23 8.93 L21.51 8.91 L15.61 13.17 L17.88 19.09 L12 15.8 L6.12 19.09 L8.39 13.17 L2.49 8.91 L9.77 8.93 Z" />
+    </svg>
+  );
+}
 
 function noteFromHz(hz: number): string {
   const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -62,6 +75,10 @@ function CircleMetric({ value, unit, sub, label, accent, tooltip, delta }: { val
 }
 import VoiceAnalyzerPage from './VoiceAnalyzerPage';
 import SectionCard from './SectionCard';
+import ExpressiveDeliverySection from './ExpressiveDeliverySection';
+import VoiceFunctionSection from './VoiceFunctionSection';
+import SpeechPerformanceStats from './SpeechPerformanceStats';
+import { summarizeVoiceFunction, summarizeSpeechPerformance } from '../lib/sectionAnalysis';
 import {
   Trash2,
   ChevronRight,
@@ -70,7 +87,6 @@ import {
   SlidersHorizontal,
   ChevronDown,
   Mic,
-  Star,
   Pencil,
   Check,
   MoreVertical,
@@ -90,7 +106,7 @@ interface ReportBaseline {
 
 interface ReportsPageProps {
   reports: VocalReport[];
-  onAddReport: (report: Omit<VocalReport, 'id'>) => void;
+  onAddReport: (report: Omit<VocalReport, 'id'>) => Promise<VocalReport | null>;
   onDeleteReport: (id: string) => void;
   onRenameReport: (id: string, name: string) => void;
   onToggleFavourite: (id: string) => void;
@@ -390,56 +406,16 @@ export default function ReportsPage({
             </div>
           </div>
         )}
-        <div className="mb-8 mt-8 flex items-center gap-3">
-          <button
-            onClick={() => setActiveReportId(null)}
-            className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer hover:scale-105"
-            style={{ background: 'rgba(23,169,201,0.06)', border: '1px solid rgba(33,232,255,0.15)' }}
-          >
-            <ChevronLeft className="w-4 h-4 text-[#21e8ff]" />
-          </button>
-          <span className="text-[11px] font-mono tracking-widest uppercase text-zinc-500">Reports</span>
-        </div>
-
-        <div className="flex items-start justify-between gap-4 mb-8">
-          <div className="max-w-[65%] sm:max-w-none">
-            {isEditingName ? (
-              <div className="flex items-center gap-2 mb-1.5">
-                <input
-                  autoFocus
-                  value={editNameValue}
-                  onChange={e => setEditNameValue(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') { onRenameReport(activeReportDetail.id, editNameValue.trim() || activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(false); }
-                    if (e.key === 'Escape') setIsEditingName(false);
-                  }}
-                  className="text-[19px] sm:text-[28px] font-extralight tracking-wide text-white bg-transparent border-b border-[#21e8ff]/50 focus:border-[#21e8ff] outline-none w-full"
-                />
-                <button
-                  onClick={() => { onRenameReport(activeReportDetail.id, editNameValue.trim() || activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(false); }}
-                  className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer"
-                  style={{ background: 'rgba(33,232,255,0.1)', border: '1px solid rgba(33,232,255,0.25)' }}
-                >
-                  <Check className="w-3.5 h-3.5 text-[#21e8ff]" />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 mb-1.5">
-                <h1 className="text-[19px] sm:text-[28px] font-extralight tracking-wide text-white">
-                  {activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`}
-                </h1>
-                <button
-                  onClick={() => { setEditNameValue(activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(true); }}
-                  className="hidden sm:flex w-7 h-7 rounded-full items-center justify-center flex-shrink-0 cursor-pointer opacity-40 hover:opacity-100 transition-opacity duration-200"
-                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255, 255, 255, 0.25)' }}
-                >
-                  <Pencil className="w-3 h-3 text-white-400" />
-                </button>
-              </div>
-            )}
-            <p className="text-xs text-zinc-500 font-light tracking-wide">
-              {activeReportDetail.date} &nbsp;·&nbsp; {activeReportDetail.duration || '2 mins'}
-            </p>
+        <div className="mb-8 mt-8 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setActiveReportId(null)}
+              className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer hover:scale-105"
+              style={{ background: 'rgba(23,169,201,0.06)', border: '1px solid rgba(33,232,255,0.15)' }}
+            >
+              <ChevronLeft className="w-4 h-4 text-[#21e8ff]" />
+            </button>
+            <span className="text-[11px] font-mono tracking-widest uppercase text-zinc-500">Reports</span>
           </div>
 
           <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
@@ -504,30 +480,75 @@ export default function ReportsPage({
           </div>
         </div>
 
+        <div className="flex flex-col items-center text-center mb-8">
+          <p className="text-xs text-zinc-500 font-light tracking-wide mb-1.5">
+            {activeReportDetail.date} &nbsp;·&nbsp; {activeReportDetail.duration || '2 mins'}
+          </p>
+          {isEditingName ? (
+            <div className="flex items-center gap-2 mb-1.5">
+              <input
+                autoFocus
+                value={editNameValue}
+                onChange={e => setEditNameValue(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { onRenameReport(activeReportDetail.id, editNameValue.trim() || activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(false); }
+                  if (e.key === 'Escape') setIsEditingName(false);
+                }}
+                className="text-[19px] sm:text-[28px] font-extralight tracking-wide text-white bg-transparent border-b border-[#21e8ff]/50 focus:border-[#21e8ff] outline-none w-full text-center"
+              />
+              <button
+                onClick={() => { onRenameReport(activeReportDetail.id, editNameValue.trim() || activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(false); }}
+                className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer"
+                style={{ background: 'rgba(33,232,255,0.1)', border: '1px solid rgba(33,232,255,0.25)' }}
+              >
+                <Check className="w-3.5 h-3.5 text-[#21e8ff]" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 mb-1.5">
+              <h1 className="text-[19px] sm:text-[28px] font-extralight tracking-wide text-white">
+                {activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`}
+              </h1>
+              <button
+                onClick={() => { setEditNameValue(activeReportDetail.name || `Vocal Report ${filteredReports.indexOf(activeReportDetail) + 1}`); setIsEditingName(true); }}
+                className="hidden sm:flex w-7 h-7 rounded-full items-center justify-center flex-shrink-0 cursor-pointer opacity-40 hover:opacity-100 transition-opacity duration-200"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255, 255, 255, 0.25)' }}
+              >
+                <Pencil className="w-3 h-3 text-white-400" />
+              </button>
+            </div>
+          )}
+        </div>
+
         {activeReportDetail.sections ? (
-          <div className="grid grid-cols-2 gap-4 sm:gap-5 mb-8 w-full max-w-5xl">
-            <SectionCard
-              label="Sustained Vowel" accent="#21e8ff"
-              primary={activeReportDetail.sections.sustainedVowel.pass ? 'Pass' : 'Needs retry'}
-              detail={activeReportDetail.sections.sustainedVowel.reasonIfFailed ?? 'Clear, usable recording'}
-            />
-            <SectionCard
-              label="Tongue Twisters" accent="#a78bfa"
-              primary={`${activeReportDetail.sections.tongueTwisters.wpm} WPM`}
-              detail={`${activeReportDetail.sections.tongueTwisters.accuracyPct}% accuracy`}
-              attempts={activeReportDetail.sections.tongueTwisters.attempts?.map(a => ({ prompt: a.prompt, score: `${a.accuracyPct}% · ${a.wpm} WPM` }))}
-            />
-            <SectionCard
-              label="Read Aloud" accent="#fbbf24"
-              primary={`${activeReportDetail.sections.readAloud.wpm} WPM`}
-              detail={`${activeReportDetail.sections.readAloud.matchPct}% match`}
-              attempts={activeReportDetail.sections.readAloud.attempts?.map(a => ({ prompt: a.prompt, score: `${a.matchPct}% · ${a.wpm} WPM` }))}
-            />
-            <SectionCard
-              label="Free Speech" accent="#34d399"
-              primary={`${activeReportDetail.sections.freeSpeech.wpm} WPM`}
-              detail={`${activeReportDetail.sections.freeSpeech.wordCount} words`}
-            />
+          <div className="flex flex-col gap-20 mb-8 w-full max-w-5xl mx-auto">
+            <ExpressiveDeliverySection categories={activeReportDetail.sections.expressiveDelivery} />
+            <VoiceFunctionSection summary={summarizeVoiceFunction(activeReportDetail.sections.acoustics)} detail />
+            <div className="w-full flex flex-col gap-3.5">
+              <span className="text-[9px] font-mono tracking-widest uppercase text-zinc-500 text-center">Speech Performance</span>
+              <SpeechPerformanceStats
+                summary={summarizeSpeechPerformance(
+                  activeReportDetail.sections.tongueTwisters,
+                  activeReportDetail.sections.readAloud,
+                  activeReportDetail.sections.freeSpeech
+                )}
+                insight={activeReportDetail.insight}
+              />
+              <div className="grid grid-cols-2 gap-4 sm:gap-5">
+                <SectionCard
+                  label="Tongue Twisters" accent="#a78bfa"
+                  primary={`${activeReportDetail.sections.tongueTwisters.wpm} WPM`}
+                  detail={`${activeReportDetail.sections.tongueTwisters.accuracyPct}% accuracy`}
+                  attempts={activeReportDetail.sections.tongueTwisters.attempts?.map(a => ({ prompt: a.prompt, score: `${a.accuracyPct}% · ${a.wpm} WPM`, match: a.match }))}
+                />
+                <SectionCard
+                  label="Read Aloud" accent="#fbbf24"
+                  primary={`${activeReportDetail.sections.readAloud.wpm} WPM`}
+                  detail={`${activeReportDetail.sections.readAloud.matchPct}% match`}
+                  attempts={activeReportDetail.sections.readAloud.attempts?.map(a => ({ prompt: a.prompt, score: `${a.matchPct}% · ${a.wpm} WPM`, match: a.match }))}
+                />
+              </div>
+            </div>
           </div>
         ) : (
           <>
@@ -649,74 +670,6 @@ export default function ReportsPage({
           </>
         )}
 
-        {activeReportDetail.insight && (
-          <div className="relative flex flex-col gap-3 py-7 px-6 mb-8">
-            <div className="absolute inset-0 rounded-3xl pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(23,169,201,0.1) 0%, rgba(33,232,255,0.04) 55%, transparent 100%)' }} />
-            <p className="text-[9px] font-mono tracking-widest uppercase text-center sm:text-left" style={{ color: 'rgba(33,232,255,0.6)' }}>AI Insight</p>
-            <p className="text-[14px] font-light text-zinc-200 leading-relaxed text-center sm:text-left">{activeReportDetail.insight}</p>
-          </div>
-        )}
-
-        {activeReportDetail.recommendedRituals && activeReportDetail.recommendedRituals.length > 0 && (
-          <div className="flex flex-col gap-2 mb-8">
-            <p className="text-[9px] font-mono tracking-widest uppercase text-zinc-500 text-center sm:text-left">Recommended for you</p>
-            {activeReportDetail.recommendedRituals.map(rec => {
-              const ritual = EXERCISE_RITUALS.find(r => r.id === rec.ritualId);
-              if (!ritual) return null; // catalog may have changed since this report was saved
-              return (
-                <div key={rec.ritualId} className="rounded-xl px-4 py-3" style={{ background: 'rgba(23,169,201,0.05)', border: '1px solid rgba(33,232,255,0.15)' }}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[13px] font-light text-zinc-200">{ritual.name}</span>
-                    <span className="text-[9px] font-mono text-[#21e8ff]/70 uppercase">{ritual.category}</span>
-                  </div>
-                  <p className="text-[11px] text-zinc-500 mt-1">{rec.reason}</p>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="space-y-6">
-          <div className="space-y-4">
-            <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-300 sm:text-zinc-500 mb-3 block text-center sm:text-left">How did it feel?</span>
-            {activeReportDetail.feelings.length === 0 ? (
-              <p className="text-zinc-600 text-xs italic font-light text-center sm:text-left">No sensations logged for this session.</p>
-            ) : (
-              <div className="flex flex-wrap justify-center sm:justify-start gap-4">
-                {activeReportDetail.feelings.map(f => (
-                  <div key={f} className="flex flex-col items-center gap-2">
-                    <div
-                      className="w-[90px] h-[90px] rounded-full flex items-center justify-center"
-                      style={{
-                        background: 'radial-gradient(circle at 38% 32%, rgba(23,169,201,0.20) 0%, rgba(23,169,201,0.08) 100%)',
-                        border: '1.5px solid rgba(23,169,201,0.4)',
-                        boxShadow: '0 0 16px rgba(23,169,201,0.16), inset 0 0 12px rgba(23,169,201,0.08)',
-                      }}
-                    >
-                      <span className="text-2xl leading-none">{FEELING_EMOJIS[f] ?? '•'}</span>
-                    </div>
-                    <span className="text-[9px] font-mono text-[#17A9C9] tracking-widest">{f}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-4">
-            <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-300 sm:text-zinc-500 mb-3 block text-center sm:text-left">Notes</span>
-            <div
-              className="w-full rounded-xl px-4 py-3 text-[12.5px] font-light text-zinc-200 leading-relaxed min-h-[56px] text-center sm:text-left"
-              style={{
-                background: 'rgba(23,169,201,0.10)',
-                border: '1px solid rgba(33,232,255,0.2)',
-                boxShadow: '0 0 12px rgba(33,232,255,0.06)',
-              }}
-            >
-              {activeReportDetail.notes || <span className="text-zinc-500 italic">No notes logged for this session.</span>}
-            </div>
-          </div>
-        </div>
-
         <p className="text-[12px] text-zinc-700 text-center leading-relaxed mt-12 px-6">
           Vocalii provides educational, wellness, and performance support. It does not diagnose or treat voice disorders. If you experience persistent hoarseness, pain, voice loss, swallowing difficulty, or other concerning symptoms, consult an ENT, SLP, or medical professional.
         </p>
@@ -728,7 +681,13 @@ export default function ReportsPage({
     return (
       <VoiceAnalyzerPage
         onBack={() => setShowAnalyzer(false)}
-        onSave={(report) => { onAddReport(report); setShowAnalyzer(false); }}
+        onSave={(report) => {
+          // Land them straight on the report they just made instead of back on the plain list.
+          onAddReport(report).then(saved => {
+            setShowAnalyzer(false);
+            if (saved) setActiveReportId(saved.id);
+          });
+        }}
         todayVocalEffort={todayVocalEffort}
         todayVocalConfidence={todayVocalConfidence}
       />
@@ -769,10 +728,10 @@ export default function ReportsPage({
                 className="absolute inset-0 rounded-full animate-ping opacity-20"
                 style={{ border: '1px solid rgba(33,232,255,0.6)', animationDuration: '2.4s' }}
               />
-              <Mic className="w-5 h-5 sm:w-7 sm:h-7 text-[#21e8ff] group-hover/va:scale-110 transition-transform duration-300" style={{ filter: 'drop-shadow(0 0 8px rgba(33,232,255,0.6))' }} />
+              <Mic className="w-5 h-5 sm:w-7 sm:h-7 text-[#21e8ff] group-hover/va:scale-110 transition-transform duration-300" strokeWidth={1.5} style={{ filter: 'drop-shadow(0 0 8px rgba(33,232,255,0.6))' }} />
             </div>
             <div className="flex flex-col items-center gap-1">
-              <span className="text-[10px] sm:text-[13px] font-medium text-[#21e8ff] tracking-wide whitespace-nowrap">Record Analysis</span>
+              <span className="text-[10px] sm:text-[13px] font-normal text-[#17A9C9] tracking-wide whitespace-nowrap">Record Analysis</span>
             </div>
           </button>
 
@@ -788,7 +747,8 @@ export default function ReportsPage({
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search reports..."
-            className="w-full py-2.5 pl-4 pr-10 rounded-2xl bg-[#13151c]/70 border border-zinc-800 focus:border-[#17A9C9]/50 focus:outline-none text-xs text-white"
+            className="w-full py-2.5 pl-4 pr-10 rounded-2xl bg-[rgba(16,22,27,0.86)] backdrop-blur-[16px] border border-[rgba(255,255,255,0.08)] focus:border-[rgba(33,232,255,0.3)] focus:outline-none text-xs text-white"
+            style={{ boxShadow: '0 8px 24px rgba(0,0,0,0.35), 0 0 20px rgba(23,169,201,0.08), inset 0 1px 0 rgba(255,255,255,0.06)' }}
           />
           <div className="absolute right-3.5 flex items-center pointer-events-none text-zinc-500">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -802,7 +762,8 @@ export default function ReportsPage({
           <div className="relative">
             <button
               onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
-              className="flex items-center gap-2.5 px-2.5 sm:px-4 py-2.5 bg-[#181b22] hover:bg-[#1d212a] border border-zinc-800/80 hover:border-[#17A9C9]/35 rounded-xl text-zinc-300 hover:text-white text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none"
+              className="flex items-center gap-2.5 px-2.5 sm:px-4 py-2.5 bg-[rgba(16,22,27,0.86)] hover:bg-[rgba(20,28,34,0.9)] border border-[rgba(255,255,255,0.08)] hover:border-[rgba(255,255,255,0.18)] backdrop-blur-[16px] rounded-xl text-zinc-300 hover:text-white text-xs font-medium cursor-pointer transition-all duration-300 select-none"
+              style={{ boxShadow: '0 8px 24px rgba(0,0,0,0.35), 0 0 20px rgba(23,169,201,0.08), inset 0 1px 0 rgba(255,255,255,0.06)' }}
               title={`Sort: ${sortBy === 'recent' ? 'Most Recent' : 'Alphabetical'}`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-[#21e8ff]" />
@@ -832,12 +793,13 @@ export default function ReportsPage({
           <button
             onClick={() => setShowFavouritesOnly(v => !v)}
             title="Favourites"
-            className={`flex items-center gap-2 px-2.5 sm:px-4 py-2.5 border rounded-xl text-xs font-medium cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)] select-none ${showFavouritesOnly
-              ? 'bg-[#17A9C9]/15 border-[#17A9C9]/45 text-[#21e8ff]'
-              : 'bg-[#181b22] hover:bg-[#1d212a] border-zinc-800/80 hover:border-[#17A9C9]/35 text-zinc-300 hover:text-white'
+            className={`flex items-center gap-2 px-2.5 sm:px-4 py-2.5 border rounded-xl text-xs font-medium cursor-pointer backdrop-blur-[16px] transition-all duration-300 select-none ${showFavouritesOnly
+              ? 'bg-[rgba(33,232,255,0.06)] border-[rgba(33,232,255,0.2)] text-[#21e8ff]'
+              : 'bg-[rgba(16,22,27,0.86)] hover:bg-[rgba(20,28,34,0.9)] border-[rgba(255,255,255,0.08)] hover:border-[rgba(255,255,255,0.18)] text-zinc-300 hover:text-white'
               }`}
+            style={{ boxShadow: '0 8px 24px rgba(0,0,0,0.35), 0 0 20px rgba(23,169,201,0.08), inset 0 1px 0 rgba(255,255,255,0.06)' }}
           >
-            <Star className="w-3.5 h-3.5" style={showFavouritesOnly ? { fill: '#21e8ff' } : undefined} />
+            <StarIcon className="w-3.5 h-3.5" style={showFavouritesOnly ? { fill: '#21e8ff' } : undefined} />
             <span className="hidden sm:inline">Favourites</span>
           </button>
         </div>
@@ -857,34 +819,53 @@ export default function ReportsPage({
               <div
                 key={report.id}
                 onClick={() => setActiveReportId(report.id)}
-                className="group relative overflow-hidden bg-[#181b22] hover:bg-[#1d212a] border border-zinc-800/80 hover:border-[#17A9C9]/45 rounded-2xl px-6 py-4 transition-all duration-500 cursor-pointer flex items-center justify-between gap-6 shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.35),0_8px_20px_rgba(23,169,201,0.08)] hover:-translate-y-[1px]"
+                className="group relative overflow-hidden rounded-2xl px-6 py-4 transition-all duration-500 cursor-pointer flex items-center justify-between gap-6 hover:-translate-y-[1px]"
+                style={{
+                  background: 'rgba(16,22,27,0.86)',
+                  backdropFilter: 'blur(16px) saturate(130%)',
+                  WebkitBackdropFilter: 'blur(16px) saturate(130%)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.35), 0 0 20px rgba(23,169,201,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.border = '1px solid rgba(23,169,201,0.35)';
+                  e.currentTarget.style.boxShadow = '0 14px 32px rgba(0,0,0,0.45), 0 0 28px rgba(23,169,201,0.18), inset 0 1px 0 rgba(255,255,255,0.09)';
+                  e.currentTarget.style.background = 'rgba(20,28,34,0.9)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.border = '1px solid rgba(255,255,255,0.08)';
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.35), 0 0 20px rgba(23,169,201,0.08), inset 0 1px 0 rgba(255,255,255,0.06)';
+                  e.currentTarget.style.background = 'rgba(16,22,27,0.86)';
+                }}
               >
-                <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#21e8ff]/30 to-transparent opacity-40 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-                <div className="absolute inset-0 w-[50%] h-full bg-gradient-to-r from-transparent via-white/[0.02] to-transparent -skew-x-[20deg] translate-x-[-150%] group-hover:translate-x-[250%] transition-transform duration-[1200ms] ease-out pointer-events-none" />
+                <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#21e8ff]/35 to-transparent opacity-40 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+                <div className="absolute inset-0 w-[50%] h-full bg-gradient-to-r from-transparent via-white/[0.03] to-transparent -skew-x-[20deg] translate-x-[-150%] group-hover:translate-x-[250%] transition-transform duration-[1200ms] ease-out pointer-events-none" />
 
                 <div className="flex-1 min-w-0 flex items-center gap-3 relative z-10">
                   <button
                     onClick={(e) => toggleFavourite(report.id, e)}
                     onMouseEnter={() => setHoveredStarId(report.id)}
                     onMouseLeave={() => setHoveredStarId(null)}
-                    className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 cursor-pointer border ${report.favourite === true
-                      ? 'bg-[#21e8ff]/[0.08] border-[#21e8ff]/25'
-                      : 'bg-white/[0.03] border-zinc-700/60 hover:bg-[#21e8ff]/10 hover:border-[#21e8ff]/30'
-                      }`}
+                    className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 cursor-pointer"
+                    style={
+                      report.favourite === true
+                        ? { background: 'rgba(23,169,201,0.08)', backdropFilter: 'blur(8px)', border: '1px solid rgba(23,169,201,0.25)' }
+                        : { background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.08)' }
+                    }
                   >
-                    <Star
+                    <StarIcon
                       className="w-4 h-4 transition-colors duration-200"
                       style={
                         report.favourite === true
-                          ? { color: '#21e8ff', fill: '#21e8ff' }
+                          ? { color: '#17A9C9', fill: '#17A9C9' }
                           : hoveredStarId === report.id
-                            ? { color: '#21e8ff' }
+                            ? { color: '#17A9C9' }
                             : { color: '#52525b' }
                       }
                     />
                   </button>
-                  <div className="flex flex-col gap-1.5 min-w-0">
-                    <h3 className="text-[15px] font-light text-white tracking-wide group-hover:text-[#21e8ff] transition-colors duration-300 truncate">
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <h3 className="text-[15px] font-light text-white tracking-wide group-hover:text-[#17A9C9] transition-colors duration-300 truncate">
                       {report.name || `Vocal Report ${index + 1}`}
                     </h3>
                     <span className="text-[10.5px] text-zinc-500 font-light tracking-wide">{report.date}</span>
@@ -892,7 +873,10 @@ export default function ReportsPage({
                 </div>
 
                 <div className="flex items-center gap-2 flex-shrink-0 relative z-10">
-                  <div className="w-8 h-8 rounded-full bg-zinc-900/60 group-hover:bg-[#17A9C9]/10 border border-zinc-800/60 group-hover:border-[#21e8ff]/50 flex items-center justify-center text-zinc-500 group-hover:text-[#21e8ff] transition-all duration-300">
+                  <div
+                    className="w-8 h-8 rounded-full group-hover:bg-[#17A9C9]/12 flex items-center justify-center text-zinc-500 group-hover:text-[#17A9C9] transition-all duration-300"
+                    style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.08)' }}
+                  >
                     <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-300" />
                   </div>
                 </div>

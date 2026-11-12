@@ -197,7 +197,6 @@ export type Database = {
           loudness_db: number | null;
           stability_pct: number | null;
           sections: Json | null;
-          recommended_rituals: Json | null;
           is_favourite: boolean;
           created_at: string;
         };
@@ -219,7 +218,6 @@ export type Database = {
           loudness_db?: number | null;
           stability_pct?: number | null;
           sections?: Json | null;
-          recommended_rituals?: Json | null;
           is_favourite?: boolean;
         };
         Update: {
@@ -239,7 +237,6 @@ export type Database = {
           loudness_db?: number | null;
           stability_pct?: number | null;
           sections?: Json | null;
-          recommended_rituals?: Json | null;
           is_favourite?: boolean;
         };
         Relationships: [];

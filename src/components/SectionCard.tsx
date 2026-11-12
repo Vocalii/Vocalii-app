@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
+import type { WordMatchDetail } from '../types/onboarding';
 
 interface SectionCardProps {
   label: string;
@@ -10,7 +11,7 @@ interface SectionCardProps {
   tooltip?: string;
   // One entry per recording when a section allowed multiple attempts (see "Try another prompt" in
   // VoiceAnalyzerPage.tsx) — omitted or length <= 1 renders exactly as before, no chevron.
-  attempts?: { prompt: string; score: string }[];
+  attempts?: { prompt: string; score: string; match?: WordMatchDetail }[];
 }
 
 // Shared by VoiceAnalyzerPage.tsx's in-session results screen and ReportsPage.tsx's saved-report
@@ -20,7 +21,10 @@ interface SectionCardProps {
 // visual language as the circles it replaces, just wide enough to hold both values.
 export default function SectionCard({ label, accent, primary, detail, tooltip, attempts }: SectionCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const hasAttempts = (attempts?.length ?? 0) > 1;
+  // The chevron shows for multiple attempts, or for a single attempt that has the word-by-word
+  // breakdown (Tongue Twisters / Read Aloud) so there is always a way to open it.
+  const hasWordMatch = !!attempts?.some(a => a.match);
+  const hasAttempts = (attempts?.length ?? 0) > 1 || hasWordMatch;
 
   return (
     <motion.div
@@ -51,15 +55,78 @@ export default function SectionCard({ label, accent, primary, detail, tooltip, a
       <span className="text-[18px] sm:text-[20px] font-light tabular-nums" style={{ color: accent }}>{primary}</span>
       <span className="text-[10px] sm:text-[11px] font-mono" style={{ color: `${accent}90` }}>{detail}</span>
       {hasAttempts && expanded && (
-        <div className="flex flex-col gap-1 mt-1 pt-2" style={{ borderTop: `1px solid ${accent}20` }}>
+        <div className="flex flex-col gap-3 mt-1 pt-2" style={{ borderTop: `1px solid ${accent}20` }}>
           {attempts!.map((a, i) => (
-            <div key={i} className="flex items-center justify-between gap-2 text-[9px] font-mono text-zinc-500">
-              <span className="truncate">{i + 1}. {a.prompt}</span>
-              <span className="shrink-0" style={{ color: `${accent}90` }}>{a.score}</span>
+            <div key={i} className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-2 text-[9px] font-mono text-zinc-500">
+                <span className="truncate">{attempts!.length > 1 ? `${i + 1}. ` : ''}{a.prompt}</span>
+                <span className="shrink-0" style={{ color: `${accent}90` }}>{a.score}</span>
+              </div>
+              {a.match && <WordMatchView match={a.match} accent={accent} />}
             </div>
           ))}
+          {hasWordMatch && (
+            <p className="text-[9px] font-mono text-zinc-600 leading-relaxed">
+              Compared with a transcript of what was heard. A target-word match, not a pronunciation or intelligibility score.
+            </p>
+          )}
         </div>
       )}
     </motion.div>
+  );
+}
+
+const OP_STYLE = {
+  correct: { color: '#d4d4d8' },
+  substituted: { color: '#fbbf24', textDecoration: 'underline', textDecorationStyle: 'dotted' as const },
+  omitted: { color: '#fb7185', textDecoration: 'line-through' },
+};
+
+// Word-by-word view of one attempt: counts, the prompt text with each word marked as heard / swapped /
+// missed, any extra words that were added, and the target words to retry.
+function WordMatchView({ match, accent }: { match: WordMatchDetail; accent: string }) {
+  const target = match.ops.filter(o => o.type !== 'added');
+  const extras = match.ops.filter(o => o.type === 'added');
+  const counts: [string, number][] = [
+    ['Correct', match.correct],
+    ['Missed', match.omitted],
+    ['Different', match.substituted],
+    ['Extra', match.added],
+  ];
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3 text-[9px] font-mono text-zinc-500">
+        {counts.map(([label, n]) => (
+          <span key={label}>
+            <span className="tabular-nums" style={{ color: n > 0 && label !== 'Correct' ? '#fbbf24' : '#d4d4d8' }}>{n}</span> {label}
+          </span>
+        ))}
+        <span className="ml-auto text-zinc-600">of {match.referenceWordCount} words</span>
+      </div>
+      <p className="text-[12px] leading-relaxed font-sans">
+        {target.map((o, k) => (
+          <span
+            key={k}
+            style={OP_STYLE[o.type as keyof typeof OP_STYLE]}
+            title={o.type === 'substituted' ? `Heard "${o.heard}"` : o.type === 'omitted' ? 'Not heard' : undefined}
+          >
+            {o.target}{' '}
+          </span>
+        ))}
+      </p>
+      {extras.length > 0 && (
+        <p className="text-[10px] font-mono text-zinc-500">
+          Extra words heard: {extras.map(o => o.heard).join(', ')}
+        </p>
+      )}
+      {match.wordsToRetry.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest">Retry</span>
+          {match.wordsToRetry.map(w => (
+            <span key={w} className="px-2 py-0.5 rounded-full text-[10px] font-mono" style={{ color: accent, border: `1px solid ${accent}50`, background: `${accent}12` }}>{w}</span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

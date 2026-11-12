@@ -1,5 +1,11 @@
 import express from 'express';
 import path from 'path';
+import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import ffmpegPath from 'ffmpeg-static';
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 import { EXERCISE_RITUALS, loadRitualsFromSanity } from './src/ritualsData.js';
@@ -282,19 +288,6 @@ const VOICE_REPORT_INSIGHT_TOOL: Anthropic.Tool = {
         type: 'string',
         description: '2-3 sentences, written directly to the user ("you"/"your"). Reference specific sections by name (e.g. "your speaking rate in the read-aloud section"). Only interpret the measured speaking-rate/match/accuracy numbers and the self-reported feelings/effort/confidence provided — never invent pitch, resonance, clarity, or any acoustic measurement not given. No diagnostic or clinical language. Warm, supportive, educational tone. End with one concrete, actionable tip grounded only in what was measured/reported.',
       },
-      recommended_rituals: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            ritual_id: { type: 'string', enum: getRitualIdList() },
-            reason: { type: 'string', description: 'One short sentence (10-20 words) explaining why this ritual fits, grounded only in the measured/reported data above.' },
-          },
-          required: ['ritual_id', 'reason'],
-        },
-        maxItems: 3,
-        description: "Optional: 1-3 rituals from the catalog below that clearly fit this session's measured results and/or reported feelings. Omit entirely or return an empty array if nothing clearly fits — never force a recommendation just to fill this.",
-      },
     },
     required: ['insight'],
   },
@@ -311,11 +304,10 @@ interface VoiceReportInsightRequestBody {
   todayVocalConfidence?: number | null;
 }
 
+// Speech-performance insight only — expressive delivery now gets its own dedicated insight (see
+// EXPRESSIVE_DELIVERY_INSIGHT_TOOL / buildExpressiveDeliveryInsightPrompt below), shown in the
+// Speech Performance card instead of the old combined bottom-of-report insight.
 function buildVoiceReportInsightPrompt(body: VoiceReportInsightRequestBody): string {
-  const ritualList = EXERCISE_RITUALS
-    .map(r => `- ${r.id}: "${r.name}" (${r.category}) — ${r.description}`)
-    .join('\n');
-
   return `You are Vocalii's voice analysis narrator. A user just completed a 4-part voice-analyzer session. You are given ONLY what was directly measured from the recordings or self-reported by the user — treat this as the complete and total truth of the session. There is no acoustic data (no pitch, resonance, clarity, or similar) available for this session, and you must never invent, imply, or guess at any such measurement.
 
 Voice & tone: ${getAiTone()}
@@ -337,15 +329,7 @@ Rules:
 - Reference at least one section by name specifically (e.g. "your speaking rate in the read-aloud section...").
 - If feelings were self-reported, acknowledge them and connect them to what was observed in the recordings where it makes sense (e.g. a fast speaking rate alongside reported tension) — but only as a gentle observation, not a diagnosis.
 - 2-3 sentences, ending with one concrete, actionable tip grounded only in the above.
-
-Available rituals (recommend only from this pool, by id):
-${ritualList}
-
-- If (and only if) something here clearly fits what was measured or reported — e.g. reported
-  tension/strain, a failed Sustained Vowel, or a notably slow/fast pace — recommend 1-3 of them by
-  id with a short reason each via the tool's recommended_rituals field. If nothing clearly fits,
-  leave it empty. Never recommend a ritual just to fill the slot.
-- Call the voice_report_insight tool with the insight (and recommended_rituals, if any) — no other text.`;
+- Call the voice_report_insight tool with the insight — no other text.`;
 }
 
 function fallbackVoiceReportInsight(body: VoiceReportInsightRequestBody): string {
@@ -626,7 +610,7 @@ app.post('/api/voice-report-insight', async (req, res) => {
     if (!process.env.ANTHROPIC_API_KEY) {
       console.log('[voice-report-insight] no ANTHROPIC_API_KEY set — using template fallback, not Claude');
       await new Promise(resolve => setTimeout(resolve, 500));
-      res.json({ insight: fallbackVoiceReportInsight(body), recommendedRituals: [] });
+      res.json({ insight: fallbackVoiceReportInsight(body) });
       return;
     }
 
@@ -646,30 +630,121 @@ app.post('/api/voice-report-insight', async (req, res) => {
 
     if (!toolUse) {
       console.error('[voice-report-insight] no tool_use block in response, content:', JSON.stringify(response.content));
-      res.json({ insight: fallbackVoiceReportInsight(body), recommendedRituals: [] });
+      res.json({ insight: fallbackVoiceReportInsight(body) });
       return;
     }
 
-    const input = toolUse.input as { insight?: unknown; recommended_rituals?: unknown };
+    const input = toolUse.input as { insight?: unknown };
     if (typeof input.insight !== 'string' || input.insight.trim().length === 0) {
       console.error('[voice-report-insight] unexpected tool input shape:', JSON.stringify(toolUse.input));
-      res.json({ insight: fallbackVoiceReportInsight(body), recommendedRituals: [] });
+      res.json({ insight: fallbackVoiceReportInsight(body) });
       return;
     }
 
-    const ritualIdList = getRitualIdList();
-    const rawRituals = Array.isArray(input.recommended_rituals) ? input.recommended_rituals : [];
-    const recommendedRituals = rawRituals
-      .filter((r): r is { ritual_id: string; reason: string } =>
-        typeof r?.ritual_id === 'string' && ritualIdList.includes(r.ritual_id) && typeof r?.reason === 'string')
-      .slice(0, 3)
-      .map(r => ({ ritualId: r.ritual_id, reason: r.reason.trim() }));
-
-    console.log('[voice-report-insight] recommendedRituals:', JSON.stringify(recommendedRituals), '(raw from model:', JSON.stringify(input.recommended_rituals), ')');
-    res.json({ insight: input.insight.trim(), recommendedRituals });
+    res.json({ insight: input.insight.trim() });
   } catch (err) {
     console.error('voice-report-insight error:', err);
     res.status(500).json({ error: 'Failed to reach the AI service.' });
+  }
+});
+
+const EXPRESSIVE_CATEGORY_KEYS = ['clarity', 'speechFlow', 'expression', 'voiceQuality'] as const;
+
+const EXPRESSIVE_DELIVERY_INSIGHT_TOOL: Anthropic.Tool = {
+  name: 'expressive_delivery_insight',
+  description: "Return a short description for each expressive-delivery category that has observations, interpreting what was detected — never a score.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      categories: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            key: { type: 'string', enum: [...EXPRESSIVE_CATEGORY_KEYS] },
+            description: {
+              type: 'string',
+              description: '1-2 sentences, written directly to the user ("you"/"your"), interpreting that category\'s detected words together (and, for Speech Flow specifically, the transcript\'s actual pacing/filler-word/repetition patterns if visible there) — never just listing the words back or stating a score/band. No diagnostic or clinical language. Warm, educational tone. Only describe what the detected words and transcript actually show; never invent a word, filler, or pattern not present.',
+            },
+          },
+          required: ['key', 'description'],
+        },
+        description: 'One entry per category listed below that has detected words — omit a category entirely if it has nothing. Never invent a category or description for one with no observations.',
+      },
+    },
+    required: ['categories'],
+  },
+};
+
+interface ExpressiveDeliveryInsightRequestBody {
+  categories: { key: string; label: string; words: string[] }[];
+  readAloudTranscript: string | null;
+  freeSpeechTranscript: string | null;
+}
+
+function buildExpressiveDeliveryInsightPrompt(body: ExpressiveDeliveryInsightRequestBody): string {
+  const categoryLines = body.categories.map(c => `- ${c.label} (key: "${c.key}"): ${c.words.join(', ')}`).join('\n');
+
+  return `You are Vocalii's voice analysis narrator, writing short, descriptive observations about expressive delivery — not scoring it, just describing what was perceived. Treat the data below as the complete and total truth of this session; never invent a vocal characteristic or spoken word not given here.
+
+Voice & tone: ${getAiTone()}
+
+Detected characteristics by category (from an expression-measurement analysis of the audio itself — these are the only words actually observed; never add others):
+${categoryLines}
+
+Transcript of what was actually said:
+${body.readAloudTranscript ? `- Read Aloud: "${body.readAloudTranscript}"` : '- Read Aloud: not available'}
+${body.freeSpeechTranscript ? `- Free Speech: "${body.freeSpeechTranscript}"` : '- Free Speech: not available'}
+
+Rules:
+- Only interpret the detected words and transcript text given above — never invent a vocal characteristic, category, or spoken word not present.
+- No diagnostic or clinical statements, and no claims about the person's character or mental state — describe only how the delivery and word choice came across.
+- Never state or imply a score, band, rank, or how "good" something is — this is purely descriptive, so write what was perceived, not how well they did.
+- For "speechFlow" specifically, if the transcript shows actual filler words (like "um", "uh", "like", "you know") or repeated words/phrases, mention that specifically — that's real signal Speech Flow is meant to capture, not just the detected words list. Only mention it if it's actually visible in the transcript given.
+- One entry per category that has detected words listed above; omit entirely any category with nothing listed.
+- 1-2 sentences per category description, warm and educational, never just restating the word list back.
+- Call the expressive_delivery_insight tool with categories — no other text.`;
+}
+
+app.post('/api/expressive-delivery-insight', async (req, res) => {
+  try {
+    const body = req.body as ExpressiveDeliveryInsightRequestBody;
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.log('[expressive-delivery-insight] no ANTHROPIC_API_KEY set — skipping descriptions, words-only fallback');
+      await new Promise(resolve => setTimeout(resolve, 400));
+      res.json({ categories: [] });
+      return;
+    }
+
+    console.log('[expressive-delivery-insight] calling Claude (claude-sonnet-5) for expressive delivery insight...');
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-5',
+      max_tokens: 512,
+      system: buildExpressiveDeliveryInsightPrompt(body),
+      tools: [EXPRESSIVE_DELIVERY_INSIGHT_TOOL],
+      tool_choice: { type: 'tool', name: 'expressive_delivery_insight' },
+      messages: [{ role: 'user', content: 'Describe this session\'s expressive delivery.' }],
+    });
+
+    const toolUse = response.content.find(
+      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use' && block.name === 'expressive_delivery_insight'
+    );
+    const input = toolUse?.input as { categories?: unknown } | undefined;
+    const rawCategories = Array.isArray(input?.categories) ? input.categories : [];
+    const validKeys: readonly string[] = EXPRESSIVE_CATEGORY_KEYS;
+    const categories = rawCategories
+      .filter((c): c is { key: string; description: string } =>
+        typeof c?.key === 'string' && validKeys.includes(c.key) && typeof c?.description === 'string' && c.description.trim().length > 0)
+      .map(c => ({ key: c.key, description: c.description.trim() }));
+
+    if (categories.length === 0) {
+      console.error('[expressive-delivery-insight] unexpected tool input shape:', JSON.stringify(toolUse?.input));
+    }
+    res.json({ categories });
+  } catch (err) {
+    console.error('expressive-delivery-insight error:', err);
+    res.json({ categories: [] });
   }
 });
 
@@ -677,6 +752,55 @@ app.post('/api/voice-report-insight', async (req, res) => {
 // the browser's Web Speech API, which has no support at all on iOS Safari. The client posts the
 // raw audio Blob as the request body (not multipart/form-data), so this route scopes its own
 // express.raw() parser rather than touching the global express.json() used everywhere else.
+// Forwards one recording to the standalone voice-analysis-service (Praat acoustics). Always resolves
+// 200 with { result: null } on any failure (service down, timeout, bad input) so a missing service
+// never breaks the rest of the Voice Analyzer report.
+app.post('/api/voice-acoustics', express.raw({ type: '*/*', limit: '15mb' }), async (req, res) => {
+  try {
+    const audioBuffer = req.body as Buffer;
+    const taskType = String(req.query.taskType ?? '');
+    if (!Buffer.isBuffer(audioBuffer) || audioBuffer.length === 0) {
+      console.log('[voice-acoustics] skipped — empty audio buffer, taskType:', taskType);
+      res.json({ result: null });
+      return;
+    }
+    const contentType = req.headers['content-type'] || 'audio/webm';
+    const ext = contentType.includes('mp4') ? 'm4a' : contentType.includes('wav') ? 'wav' : 'webm';
+    const formData = new FormData();
+    formData.append('task_type', taskType);
+    formData.append('expected_text', String(req.query.expectedText ?? ''));
+    formData.append('prompt_id', String(req.query.promptId ?? ''));
+    formData.append('reference_profile', String(req.query.referenceProfile ?? 'personal'));
+    formData.append('consent_to_store_audio', 'false');
+    formData.append('file', new Blob([audioBuffer], { type: contentType }), `audio.${ext}`);
+
+    const baseUrl = process.env.VOICE_ANALYSIS_URL || 'http://localhost:8000';
+    console.log('[voice-acoustics] request:', taskType, audioBuffer.length, 'bytes ->', baseUrl);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+    try {
+      const upstream = await fetch(`${baseUrl}/api/v1/voice-analysis`, { method: 'POST', body: formData, signal: controller.signal });
+      if (!upstream.ok) {
+        console.error('[voice-acoustics] service error:', upstream.status, await upstream.text());
+        res.json({ result: null });
+        return;
+      }
+      const result = await upstream.json();
+      if (result?.recording_quality?.passed === false) {
+        console.log('[voice-acoustics] quality gate rejected', taskType, '—', result.recording_quality.issues);
+      } else {
+        console.log('[voice-acoustics] success', taskType, '— metrics:', Object.keys(result?.acoustic_metrics ?? {}));
+      }
+      res.json({ result });
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    console.error('[voice-acoustics] error:', err);
+    res.json({ result: null });
+  }
+});
+
 // Always resolves with { transcript: null } on any failure (missing key, upstream error, timeout,
 // bad input) rather than a non-2xx status — one flaky transcription must never throw the
 // Promise.all in the client's analysis step.
@@ -725,6 +849,295 @@ app.post('/api/transcribe', express.raw({ type: '*/*', limit: '15mb' }), async (
   } catch (err) {
     console.error('[transcribe] error:', err);
     res.json({ transcript: null });
+  }
+});
+
+// ── Hume expressive delivery (optional enhancement) ─────────────────────────────────────────────
+// One normalized window of Hume output: lowercase Hume label -> probability (0-1). Everything below
+// the stub operates on this shape, so swapping in the real API call only means mapping Hume's
+// response into HumeWindow[] — the allowlist, threshold and consistency logic need no changes.
+type HumeWindow = Record<string, number>;
+
+// The 4 report-facing categories — descriptive, not scored: no band, no number, just which of
+// Hume's real expression/voice-attribute labels (confirmed against its published taxonomy —
+// expression-measurement/docs/audio/measurements) actually fired this session, grouped by what
+// they're about. `phrase`: a short plain-English rendering of this exact label, shown to the user
+// instead of Hume's raw taxonomy word.
+const HUME_CATEGORIES: { key: 'clarity' | 'speechFlow' | 'expression' | 'voiceQuality'; label: string; labels: { name: string; phrase: string }[] }[] = [
+  {
+    // Clarity: how distinctly words are articulated and how clear the speech sounds.
+    key: 'clarity', label: 'Clarity', labels: [
+      { name: 'articulate', phrase: 'articulate' },
+      { name: 'clear', phrase: 'clear' },
+      { name: 'enunciating', phrase: 'clearly enunciated' },
+      { name: 'eloquent', phrase: 'eloquent' },
+      { name: 'polished', phrase: 'polished' },
+      { name: 'mumbling', phrase: 'some mumbled stretches' },
+      { name: 'slurred', phrase: 'some slurred words' },
+      { name: 'garbled', phrase: 'a few garbled moments' },
+      { name: 'unintelligible', phrase: 'some hard-to-make-out stretches' },
+      { name: 'muffled', phrase: 'a muffled quality' },
+    ],
+  },
+  {
+    // Speech Flow: how speech moves — fluency, pacing, hesitations. Fillers/repetitions come from
+    // the transcript directly in buildExpressiveDeliveryInsightPrompt, not from Hume's labels here.
+    key: 'speechFlow', label: 'Speech Flow', labels: [
+      { name: 'fluent', phrase: 'fluent' },
+      { name: 'composed', phrase: 'composed' },
+      { name: 'fast', phrase: 'a fast pace' },
+      { name: 'slow', phrase: 'a slow pace' },
+      { name: 'rushed', phrase: 'a rushed pace' },
+      { name: 'speedy', phrase: 'a quick pace' },
+      { name: 'drawled', phrase: 'a drawn-out pace' },
+      { name: 'repetitive', phrase: 'some repetition' },
+      { name: 'stuttering', phrase: 'some stumbling over words' },
+      { name: 'hesitant', phrase: 'a bit of hesitation' },
+      { name: 'hesitancy', phrase: 'a bit of hesitation' },
+      { name: 'hesitation', phrase: 'a bit of hesitation' },
+      { name: 'uncertainty', phrase: 'some unsure moments' },
+      { name: 'nervous', phrase: 'sounded a little nervous' },
+      { name: 'nervousness', phrase: 'sounded a little nervous' },
+    ],
+  },
+  {
+    // Expression: how the voice conveys variation, energy, emphasis, warmth and intonation.
+    key: 'expression', label: 'Expression', labels: [
+      { name: 'expressive', phrase: 'good vocal variety' },
+      { name: 'dynamic', phrase: 'dynamic delivery' },
+      { name: 'animated', phrase: 'an animated tone' },
+      { name: 'melodic', phrase: 'a melodic quality' },
+      { name: 'lilting', phrase: 'a lilting rhythm' },
+      { name: 'monotone', phrase: 'some flat, even-toned stretches' },
+      { name: 'flat', phrase: 'a flat tone' },
+      { name: 'dull', phrase: 'a few dull stretches' },
+      { name: 'lifeless', phrase: 'a lifeless quality' },
+      { name: 'warm', phrase: 'came across warm' },
+      { name: 'warmth', phrase: 'came across warm' },
+      { name: 'honeyed', phrase: 'a smooth, honeyed tone' },
+      { name: 'gentle', phrase: 'a gentle tone' },
+      { name: 'soothing', phrase: 'a soothing quality' },
+      { name: 'charismatic', phrase: 'a charismatic presence' },
+      { name: 'confident', phrase: 'sounded confident' },
+      { name: 'confidence', phrase: 'sounded confident' },
+      { name: 'enthusiastic', phrase: 'came across enthusiastic' },
+      { name: 'enthusiasm', phrase: 'came across enthusiastic' },
+      { name: 'energetic', phrase: 'had good energy' },
+      { name: 'passionate', phrase: 'came across passionate' },
+      { name: 'playful', phrase: 'a playful tone' },
+      { name: 'spirited', phrase: 'a spirited delivery' },
+      { name: 'vibrant', phrase: 'a vibrant tone' },
+      { name: 'affection', phrase: 'came across affectionate' },
+      { name: 'caring', phrase: 'sounded caring' },
+      { name: 'compassion', phrase: 'came across compassionate' },
+      { name: 'tenderness', phrase: 'a tender quality' },
+      { name: 'feeling engaged', phrase: 'came across engaged' },
+      { name: 'interest', phrase: 'sounded genuinely interested' },
+      { name: 'disinterest', phrase: 'a few disengaged stretches' },
+      { name: 'detachment', phrase: 'some detached moments' },
+      { name: 'boredom', phrase: 'a bit of flatness' },
+      { name: 'feeling dull', phrase: 'a few dull stretches' },
+      { name: 'indifference', phrase: 'some indifferent-sounding moments' },
+    ],
+  },
+  {
+    // Voice Quality: the perceptual character of the voice itself — texture, timbre, pitch.
+    key: 'voiceQuality', label: 'Voice Quality', labels: [
+      { name: 'hoarse', phrase: 'hoarse' },
+      { name: 'raspy', phrase: 'raspy' },
+      { name: 'husky', phrase: 'husky' },
+      { name: 'smoky', phrase: 'smoky' },
+      { name: "smoker's voice", phrase: 'a smoky quality' },
+      { name: 'gravelly', phrase: 'gravelly' },
+      { name: 'gritty', phrase: 'gritty' },
+      { name: 'breathy', phrase: 'breathy' },
+      { name: 'nasal', phrase: 'nasal' },
+      { name: 'bright', phrase: 'bright' },
+      { name: 'smooth', phrase: 'smooth' },
+      { name: 'silky', phrase: 'silky' },
+      { name: 'velvety', phrase: 'velvety' },
+      { name: 'rich', phrase: 'rich' },
+      { name: 'deep', phrase: 'deep' },
+      { name: 'thin', phrase: 'thin' },
+      { name: 'creaky', phrase: 'creaky' },
+      { name: 'squeaky', phrase: 'squeaky' },
+      { name: 'throaty', phrase: 'throaty' },
+      { name: 'scratchy', phrase: 'scratchy' },
+      { name: 'high-pitched', phrase: 'high-pitched' },
+      { name: 'low-pitched', phrase: 'low-pitched' },
+      { name: 'booming', phrase: 'booming' },
+      { name: 'weathered', phrase: 'a weathered quality' },
+    ],
+  },
+];
+const HUME_MIN_DURATION_SECONDS = 5;    // shorter recordings give too little signal
+
+// Hume's audio/file endpoint only accepts 16-bit PCM, 16kHz, mono WAV — it rejects the webm/opus
+// (or mp4/m4a) the browser's MediaRecorder actually produces with `unsupported_media_type`, so
+// every clip is transcoded through ffmpeg first. Output goes to a real temp file rather than a pipe:
+// writing WAV to a non-seekable stream leaves ffmpeg unable to patch the header with the final byte
+// count, so it writes the "unknown size" sentinel (0xFFFFFFFF) instead — which Hume's parser rejects
+// as truncated. A seekable temp file lets ffmpeg finalize the header correctly. Throws if ffmpeg
+// exits non-zero; always cleans up its temp dir.
+async function transcodeToWav16kMono(audio: Buffer): Promise<Buffer> {
+  const dir = await mkdtemp(join(tmpdir(), 'vocalii-hume-'));
+  const inPath = join(dir, `${randomUUID()}.in`);
+  const outPath = join(dir, `${randomUUID()}.wav`);
+  try {
+    await writeFile(inPath, audio);
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(ffmpegPath as unknown as string, [
+        '-y',
+        '-i', inPath,
+        '-f', 'wav',
+        '-ar', '16000',
+        '-ac', '1',
+        '-acodec', 'pcm_s16le',
+        outPath,
+      ]);
+      let stderr = '';
+      proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+      proc.on('error', reject);
+      proc.on('close', code => {
+        if (code === 0) resolve();
+        else reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-500)}`));
+      });
+    });
+    return await readFile(outPath);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// Node's built-in fetch (undici) reproducibly fails uploading a multipart FormData+Blob body to
+// Hume's endpoint — the connection closes mid-write with EPIPE/"other side closed" every time,
+// confirmed in isolation outside this app too. curl uploads the identical file successfully, so
+// this shells out to curl instead of fighting undici. `-w` appends the HTTP status after the body
+// on its own line so both can be read from one stdout capture.
+async function uploadWavToHume(wav: Buffer, apiKey: string): Promise<{ status: number; body: string }> {
+  const dir = await mkdtemp(join(tmpdir(), 'vocalii-hume-upload-'));
+  const wavPath = join(dir, `${randomUUID()}.wav`);
+  try {
+    await writeFile(wavPath, wav);
+    const { code, stdout, stderr } = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+      const proc = spawn('curl', [
+        '-sS',
+        '-X', 'POST', 'https://api.cloud.hume.ai/v1/expression/audio/file',
+        '-H', `X-Hume-Api-Key: ${apiKey}`,
+        '-F', `file=@${wavPath};type=audio/wav`,
+        '-w', '\n%{http_code}',
+      ]);
+      let stdout = '';
+      let stderr = '';
+      proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+      proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+      proc.on('error', reject);
+      proc.on('close', code => resolve({ code, stdout, stderr }));
+    });
+    if (code !== 0) throw new Error(`curl exited with code ${code}: ${stderr.slice(-500)}`);
+    const lastNewline = stdout.lastIndexOf('\n');
+    return { status: Number(stdout.slice(lastNewline + 1).trim()), body: stdout.slice(0, lastNewline) };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// Real call to Hume's current Expression Measurement API: a single synchronous upload, no job/poll
+// loop (the old v0/batch/jobs endpoint this used to call has been retired). Each returned
+// `measurement` carries two separate scored lists — `expressions` (e.g. "warmth", "confidence") and
+// `voice_attributes` (e.g. "warm", "confident", "monotone", "hesitant") — merged here into one flat,
+// lowercased HumeWindow per measurement so the rest of this file doesn't need to know about the
+// split. Both lists are threshold-filtered by Hume (only "present" entries are included), so a
+// window may be missing any given label — HUME_CATEGORIES already lists the real label names
+// confirmed against Hume's published taxonomy. Never throws past the caller — the route below also
+// guards it.
+async function analyzeWithHume(audio: Buffer): Promise<HumeWindow[] | null> {
+  const apiKey = process.env.HUME_API_KEY;
+  if (!apiKey) {
+    // Dev-only preview: HUME_MOCK=1 returns fake windows so the report UI can be seen without a key.
+    if (process.env.HUME_MOCK === '1') {
+      return [
+        { warm: 0.71, confident: 0.76, monotone: 0.1, hesitant: 0.12 },
+        { warm: 0.68, confident: 0.72, monotone: 0.15, hesitant: 0.1 },
+      ];
+    }
+    return null;
+  }
+
+  try {
+    const wav = await transcodeToWav16kMono(audio);
+    const { status, body } = await uploadWavToHume(wav, apiKey);
+    if (status !== 200) {
+      console.error('[hume] audio/file request failed:', status, body.slice(0, 500));
+      return null;
+    }
+
+    const data = JSON.parse(body) as {
+      measurements?: { expressions?: { name: string; probability: number }[]; voice_attributes?: { name: string; probability: number }[] }[];
+    };
+    const windows: HumeWindow[] = [];
+    for (const m of data.measurements ?? []) {
+      const w: HumeWindow = {};
+      for (const e of [...(m.expressions ?? []), ...(m.voice_attributes ?? [])]) {
+        if (typeof e.name === 'string' && typeof e.probability === 'number') w[e.name.toLowerCase()] = e.probability;
+      }
+      if (Object.keys(w).length > 0) windows.push(w);
+    }
+    if (windows.length === 0) {
+      console.error('[hume] no usable windows in response:', JSON.stringify(data).slice(0, 1000));
+      return null;
+    }
+    console.log('[hume] received', windows.length, 'windows, sample keys:', Object.keys(windows[0]).slice(0, 10));
+    return windows;
+  } catch (err) {
+    console.error('[hume] analyzeWithHume error:', err);
+    return null;
+  }
+}
+
+// Descriptive, not scored: for each of the 4 categories, collects the plain-English phrases for
+// whichever of its grouped labels actually fired in any window this session (deduped) — no band, no
+// number. A category with nothing detected is simply omitted.
+function categorizeHumeWindows(windows: HumeWindow[]): { key: string; label: string; words: string[] }[] {
+  if (windows.length === 0) return [];
+  return HUME_CATEGORIES.flatMap(cat => {
+    const words = new Set<string>();
+    for (const w of windows) {
+      for (const { name, phrase } of cat.labels) {
+        if (typeof w[name] === 'number') words.add(phrase);
+      }
+    }
+    if (words.size === 0) return [];
+    return [{ key: cat.key as string, label: cat.label, words: [...words] }];
+  });
+}
+
+// Lets the client show "you'll be evaluated for expression" copy only when Hume is actually
+// configured — never exposes the key itself.
+app.get('/api/hume-status', (_req, res) => {
+  res.json({ enabled: Boolean(process.env.HUME_API_KEY) || process.env.HUME_MOCK === '1' });
+});
+
+// Optional expressive-delivery analysis for one Read Aloud / Free Speech recording. Server-side only
+// (HUME_API_KEY never reaches the client). Always resolves 200 with { categories: [] } on any
+// failure — missing key, stub/null result, upstream error, too-short clip — so the client treats
+// "nothing" and "failed" identically and the report simply omits the section.
+app.post('/api/hume-delivery', express.raw({ type: '*/*', limit: '15mb' }), async (req, res) => {
+  try {
+    const audioBuffer = req.body as Buffer;
+    const durationSec = Number(req.query.durationSec);
+    if (!(process.env.HUME_API_KEY || process.env.HUME_MOCK === '1')
+      || !Buffer.isBuffer(audioBuffer) || audioBuffer.length === 0
+      || !Number.isFinite(durationSec) || durationSec < HUME_MIN_DURATION_SECONDS) {
+      res.json({ categories: [] });
+      return;
+    }
+
+    const windows = await analyzeWithHume(audioBuffer);
+    res.json({ categories: windows ? categorizeHumeWindows(windows) : [] });
+  } catch (err) {
+    console.error('[hume-delivery] error:', err);
+    res.json({ categories: [] });
   }
 });
 

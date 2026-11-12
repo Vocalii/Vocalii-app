@@ -2,6 +2,26 @@
 // scoring (pitch/resonance/clarity/stability/fatigue below) with plain, literally-true
 // measurements. Its presence on a VocalReport is what distinguishes a report saved after this
 // change from an older one that still only has the acoustic fields populated.
+// One word in the word-by-word comparison of a transcript against the prompt text. `target` is the
+// word as written in the prompt, `heard` the word as transcribed. A target-word match only — not a
+// measure of pronunciation or intelligibility.
+export interface WordMatchOp {
+  type: 'correct' | 'substituted' | 'omitted' | 'added';
+  target?: string;
+  heard?: string;
+}
+
+export interface WordMatchDetail {
+  ops: WordMatchOp[];
+  correct: number;
+  substituted: number;
+  omitted: number;
+  added: number;
+  referenceWordCount: number;
+  // Target words that were missed or came out as a different word, de-duplicated, in prompt order.
+  wordsToRetry: string[];
+}
+
 export interface VoiceAnalyzerSections {
   sustainedVowel: { pass: boolean; reasonIfFailed: string | null };
   // `attempts` holds one entry per recording — usually 1, but can be more if the person used
@@ -11,17 +31,50 @@ export interface VoiceAnalyzerSections {
     wpm: number;
     accuracyPct: number;
     transcript: string | null;
-    attempts?: { prompt: string; transcript: string | null; wpm: number; accuracyPct: number }[];
+    attempts?: { prompt: string; transcript: string | null; wpm: number; accuracyPct: number; match?: WordMatchDetail }[];
   };
   readAloud: {
     wpm: number;
     matchPct: number;
     transcript: string | null;
-    attempts?: { prompt: string; transcript: string | null; wpm: number; matchPct: number }[];
+    attempts?: { prompt: string; transcript: string | null; wpm: number; matchPct: number; match?: WordMatchDetail }[];
   };
   freeSpeech: { wpm: number; wordCount: number; transcript: string | null };
-  // Reserved for a future validated acoustic-analysis service — always null today.
-  acoustics: null;
+  // Per-step results from the voice-analysis-service; null when the service was unavailable.
+  acoustics: AcousticStepResult[] | null;
+  // Optional Hume-derived expressive delivery observations for Read Aloud + Free Speech. Absent
+  // (not empty) when Hume was unavailable or nothing cleared the confidence threshold.
+  expressiveDelivery?: ExpressiveCategoryResult[];
+}
+
+export interface AcousticStepResult {
+  label: string;
+  // Absent when that recording failed the service's quality gate (see qualityMessage).
+  medianF0Hz?: number | null;
+  pitchP10Hz?: number | null;
+  pitchP90Hz?: number | null;
+  pitchRangeSemitones?: number | null;
+  pitchVariabilitySdSemitones?: number | null;
+  meanHnrDb?: number | null;
+  jitterLocalPercent?: number | null;
+  shimmerLocalPercent?: number | null;
+  // Relative to this session's own mic/room, not an absolute loudness.
+  relativeLevelDbfs?: number | null;
+  qualityMessage?: string;
+}
+
+// Descriptive, not scored — no band, no number. Clarity/Speech Flow/Expression/Voice Quality, each
+// grounded in Hume's real expression/voice-attribute labels (see HUME_CATEGORIES in server.ts).
+export interface ExpressiveCategoryResult {
+  key: 'clarity' | 'speechFlow' | 'expression' | 'voiceQuality';
+  label: string;
+  // Plain-English phrases for whichever of this category's Hume labels actually fired this
+  // session — specific to the recording, not a generic description of what the category covers.
+  words: string[];
+  // AI-written description interpreting `words` together (and, for Speech Flow, the transcript's
+  // actual filler/repetition patterns) — see /api/expressive-delivery-insight. Absent when the API
+  // key is missing, the call failed, or this is an older report saved before descriptions existed.
+  description?: string;
 }
 
 export interface VocalReport {
@@ -34,6 +87,9 @@ export interface VocalReport {
   fatigueLevel: number;
   feelings: string[];
   notes: string;
+  // Speech-performance insight (Sustained Vowel/Tongue Twisters/Read Aloud/Free Speech numbers +
+  // feelings) — shown inside the Speech Performance card. Expressive delivery has its own separate
+  // per-category descriptions now (sections.expressiveDelivery[].description), not folded into this.
   insight: string;
   // Old acoustic fields — kept for reports saved before the Voice Analyzer refactor; no longer
   // populated by new reports (see `sections` below instead).
@@ -44,10 +100,6 @@ export interface VocalReport {
   loudnessDb?: number;
   stabilityPct?: number;
   sections?: VoiceAnalyzerSections;
-  // 1-3 rituals the AI recommended for this specific session, based on its insight — resolved
-  // back to full Ritual objects at display time via EXERCISE_RITUALS.find(). Scoped to this report
-  // only; never written to daily_checkins or any other ritual-selection system.
-  recommendedRituals?: { ritualId: string; reason: string }[];
   favourite?: boolean;
 }
 

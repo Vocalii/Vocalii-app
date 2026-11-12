@@ -110,7 +110,6 @@ function mapReport(r: {
   loudness_db: number | null;
   stability_pct: number | null;
   sections: unknown;
-  recommended_rituals: unknown;
   is_favourite: boolean;
 }): VocalReport {
   return {
@@ -131,7 +130,6 @@ function mapReport(r: {
     loudnessDb: r.loudness_db ?? undefined,
     stabilityPct: r.stability_pct ?? undefined,
     sections: (r.sections as VoiceAnalyzerSections | null) ?? undefined,
-    recommendedRituals: (r.recommended_rituals as { ritualId: string; reason: string }[] | null) ?? undefined,
     favourite: r.is_favourite,
   };
 }
@@ -626,8 +624,8 @@ export default function App() {
   };
 
   // ─── Reports ────────────────────────────────────────────────────────────────
-  const handleAddReport = async (report: Omit<VocalReport, 'id'>) => {
-    if (!userId) return;
+  const handleAddReport = async (report: Omit<VocalReport, 'id'>): Promise<VocalReport | null> => {
+    if (!userId) return null;
     const { data: row } = await supabase.from('vocal_reports').insert({
       user_id: userId,
       name: report.name ?? null,
@@ -646,15 +644,17 @@ export default function App() {
       loudness_db: report.loudnessDb ?? null,
       stability_pct: report.stabilityPct ?? null,
       sections: (report.sections as unknown as Json) ?? null,
-      recommended_rituals: (report.recommendedRituals as unknown as Json) ?? null,
       is_favourite: report.favourite ?? false,
     }).select().single();
 
     if (row) {
-      setReports(prev => [mapReport(row), ...prev]);
+      const mapped = mapReport(row);
+      setReports(prev => [mapped, ...prev]);
       addNotification('Voice analysis report saved');
       markTutorialStepDone(tutorialAnalyzerDone, setTutorialAnalyzerDone, 'tutorial_analyzer_done');
+      return mapped;
     }
+    return null;
   };
 
   const handleDeleteReport = async (id: string) => {
